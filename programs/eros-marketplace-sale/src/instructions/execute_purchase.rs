@@ -7,31 +7,36 @@ use crate::sale_order::SaleOrder;
 use crate::seeds::{LISTING_STATE_SEED, ROYALTY_REGISTRY_SEED, SALE_AUTHORITY_SEED};
 use crate::state::{ListingState, RoyaltyRegistry};
 
-// ── mpl-bubblegum 3.0 CPI surface (kinobi-generated) ────────────────────────
+// ── mpl-bubblegum 3.0 CPI surface — TransferV2 ───────────────────────────────
 //
-// mpl-bubblegum 3.0 exposes a kinobi-generated CPI API.  Key types:
+// mpl-bubblegum 3.0 exposes a kinobi-generated CPI API.  We use the **V2**
+// transfer instruction (`TransferV2`) which is the canonical instruction for
+// V2-minted cNFTs (trees created with `create_tree_config_v2`).
 //
-//   instructions::Transfer { tree_config, leaf_owner: (Pubkey, bool),
-//       leaf_delegate: (Pubkey, bool), new_leaf_owner, merkle_tree,
-//       log_wrapper, compression_program, system_program }
-//   instructions::TransferInstructionArgs { root, data_hash, creator_hash,
-//       nonce, index }
-//   instructions::TransferCpi<'a,'b>  — holds &AccountInfo refs, exposes
-//       invoke_signed_with_remaining_accounts(seeds, proof)
-//   instructions::TransferCpiBuilder<'a,'b> — builder that calls TransferCpi
-//   instructions::TransferBuilder — produces solana_program::Instruction from
-//       Pubkeys (no lifetime issues)
+// Key types:
+//   instructions::TransferV2 { tree_config, payer, authority: Option<Pubkey>,
+//       leaf_owner, leaf_delegate: Option<Pubkey>, new_leaf_owner, merkle_tree,
+//       core_collection: Option<Pubkey>, log_wrapper, compression_program,
+//       system_program }
+//   instructions::TransferV2InstructionArgs { root, data_hash, creator_hash,
+//       asset_data_hash: Option<[u8;32]>, flags: Option<u8>, nonce, index }
 //
-// We use the low-level `Transfer::instruction_with_remaining_accounts` + a
-// manual `invoke_signed` call to sidestep Rust's lifetime constraints that
-// arise from `TransferCpi`'s borrowed `&'b AccountInfo<'a>` parameters.  This
-// is semantically identical to using `TransferCpi::invoke_signed_with_remaining_accounts`.
+// Authority model (V2 vs V1):
+//   V1 Transfer: leaf_delegate field must sign (as_signer=true). Our PDA acted
+//     as the leaf delegate and signed. Straightforward delegate-based flow.
 //
-// Discriminator (8-byte, Anchor-style): [163, 52, 200, 231, 140, 3, 69, 186]
+//   V2 TransferV2: `authority` (optional, defaults to `payer`) must be either
+//     the leaf owner OR the collection's permanent transfer delegate. The
+//     leaf_delegate field is now just informational/read-only. This means for a
+//     program-mediated marketplace using V2:
+//       - Set `authority = sale_authority PDA` (signs via PDA seeds).
+//       - The collection MUST have `sale_authority` as its permanent transfer
+//         delegate (set at collection creation time, not at listing time).
+//       - `payer = buyer` (pays for the transaction).
+//       - `leaf_owner = seller` (read-only).
+//       - `leaf_delegate = sale_authority` (informational, read-only).
 //
-// leaf_owner  = (seller, as_signer=false) — not signing; leaf delegate signs
-// leaf_delegate = (sale_authority PDA, as_signer=true) — program PDA signs
-// new_leaf_owner = buyer (read-only, no signature)
+// Discriminator (8-byte, Anchor-style): [119, 40, 6, 235, 234, 221, 248, 49]
 //
 // Merkle proof path nodes are appended as remaining_accounts on the instruction
 // (read-only, non-signer AccountMeta entries), in order from leaf to root.
@@ -42,7 +47,7 @@ use crate::state::{ListingState, RoyaltyRegistry};
 
 // Imports needed only when the Bubblegum CPI is compiled in.
 #[cfg(not(feature = "test-without-bubblegum"))]
-use mpl_bubblegum::instructions::{Transfer as BubblegumTransfer, TransferInstructionArgs};
+use mpl_bubblegum::instructions::{TransferV2 as BubblegumTransferV2, TransferV2InstructionArgs};
 #[cfg(not(feature = "test-without-bubblegum"))]
 use anchor_lang::solana_program::{instruction::AccountMeta, program::invoke_signed};
 
@@ -242,19 +247,30 @@ pub fn handler<'info>(
         )?;
     }
 
-    // 7. Bubblegum cNFT transfer CPI signed by sale_authority PDA acting as delegate.
+    // 7. Bubblegum cNFT TransferV2 CPI signed by sale_authority PDA.
     //
     // This block is compiled out when the `test-without-bubblegum` feature is
     // active, allowing unit tests (solana-program-test) to exercise the SOL-split
     // and nonce-clearing logic without requiring real on-chain cNFT state.
     //
-    // Implementation note: We use `BubblegumTransfer::instruction_with_remaining_accounts`
-    // (which works with Pubkeys) rather than `TransferCpi` (which takes &AccountInfo refs)
+    // Implementation note: We use `BubblegumTransferV2::instruction_with_remaining_accounts`
+    // (which works with Pubkeys) rather than `TransferV2Cpi` (which takes &AccountInfo refs)
     // to avoid Rust lifetime complexity from invariant generic parameters in Anchor's
     // `Context<T>` type.  The result is functionally identical.
+    //
+    // V2 authority flow:
+    //   payer     = buyer (writable, signer — pays the transaction)
+    //   authority = sale_authority PDA (optional signer — must be leaf owner OR
+    //               collection permanent transfer delegate; we use the collection
+    //               permanent transfer delegate path: the marketplace collection
+    //               must be created with sale_authority as its permanent transfer
+    //               delegate)
+    //   leaf_owner    = seller (read-only)
+    //   leaf_delegate = sale_authority PDA (informational, read-only)
+    //   new_leaf_owner = buyer
     #[cfg(not(feature = "test-without-bubblegum"))]
     {
-        // Derive the bump for sale_authority PDA so we can sign as the delegate.
+        // Derive the bump for sale_authority PDA so we can sign as the authority.
         let sale_auth_bump = ctx.bumps.sale_authority;
         let asset_id_bytes = sale_order.asset_id.to_bytes();
         let seller_bytes = sale_order.seller_wallet.to_bytes();
@@ -266,45 +282,65 @@ pub fn handler<'info>(
             &bump_slice,
         ];
 
-        // Build the Bubblegum transfer instruction using the Pubkey-based struct.
-        //   leaf_owner = (seller, as_signer=false)  — delegate signs instead
-        //   leaf_delegate = (sale_authority PDA, as_signer=true)
-        //   new_leaf_owner = buyer
+        // Build the Bubblegum TransferV2 instruction using the Pubkey-based struct.
         let proof_metas: Vec<AccountMeta> = ctx
             .remaining_accounts
             .iter()
             .map(|a| AccountMeta::new_readonly(*a.key, false))
             .collect();
 
-        let ix = BubblegumTransfer {
+        let ix = BubblegumTransferV2 {
             tree_config: ctx.accounts.tree_config.key(),
-            leaf_owner: (ctx.accounts.seller.key(), false),
-            leaf_delegate: (ctx.accounts.sale_authority.key(), true),
+            payer: ctx.accounts.buyer.key(),
+            // authority = sale_authority PDA, which signs via PDA seeds.
+            // In production, this PDA must be the collection's permanent transfer
+            // delegate. The `None` fallback (→ payer) is wrong for marketplace use.
+            authority: Some(ctx.accounts.sale_authority.key()),
+            leaf_owner: ctx.accounts.seller.key(),
+            // leaf_delegate is informational (read-only in V2).
+            leaf_delegate: Some(ctx.accounts.sale_authority.key()),
             new_leaf_owner: ctx.accounts.buyer.key(),
             merkle_tree: ctx.accounts.merkle_tree.key(),
+            // core_collection: None unless the cNFT has a Core collection.
+            core_collection: None,
             log_wrapper: ctx.accounts.log_wrapper.key(),
             compression_program: ctx.accounts.compression_program.key(),
             system_program: ctx.accounts.system_program.key(),
         }
         .instruction_with_remaining_accounts(
-            TransferInstructionArgs {
+            TransferV2InstructionArgs {
                 root,
                 data_hash,
                 creator_hash,
+                // asset_data_hash and flags are V2-only optional fields.
+                // Pass None unless the cNFT uses Core asset-data extensions.
+                asset_data_hash: None,
+                flags: None,
                 nonce,
                 index,
             },
             &proof_metas,
         );
 
-        // Collect account_infos in the same order as the instruction accounts.
+        // Collect account_infos in the same order as the TransferV2 instruction accounts:
+        // [tree_config, payer, authority(opt), leaf_owner, leaf_delegate(opt),
+        //  new_leaf_owner, merkle_tree, core_collection(opt), log_wrapper,
+        //  compression_program, system_program, ...proof]
+        //
+        // When optional accounts are None, the kinobi-generated code substitutes
+        // the Bubblegum program ID as a placeholder. We must replicate that here
+        // for the AccountInfo slice.
         let mut account_infos = vec![
             ctx.accounts.bubblegum_program.to_account_info(), // program itself
             ctx.accounts.tree_config.to_account_info(),
-            ctx.accounts.seller.to_account_info(),
-            ctx.accounts.sale_authority.to_account_info(),
-            ctx.accounts.buyer.to_account_info(),
+            ctx.accounts.buyer.to_account_info(),      // payer (writable, signer)
+            ctx.accounts.sale_authority.to_account_info(), // authority (signer via PDA)
+            ctx.accounts.seller.to_account_info(),     // leaf_owner (read-only)
+            ctx.accounts.sale_authority.to_account_info(), // leaf_delegate (read-only)
+            ctx.accounts.buyer.to_account_info(),      // new_leaf_owner (read-only)
             ctx.accounts.merkle_tree.to_account_info(),
+            // core_collection = None → Bubblegum program ID placeholder
+            ctx.accounts.bubblegum_program.to_account_info(),
             ctx.accounts.log_wrapper.to_account_info(),
             ctx.accounts.compression_program.to_account_info(),
             ctx.accounts.system_program.to_account_info(),
