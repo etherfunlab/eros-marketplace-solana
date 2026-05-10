@@ -459,4 +459,207 @@ mod tests {
         let s = read_listing(&mut ctx, listing_pda).await;
         assert_eq!(s.active_nonce, None, "listing nonce must be cleared");
     }
+
+    // Helper: set up the common state needed for execute_purchase rejection tests.
+    // Returns (ctx, payer, seller_sk, seller_pubkey, buyer, r_recv, f_recv, asset_id, now_ts)
+    async fn setup_for_execute_purchase() -> (
+        solana_program_test::ProgramTestContext,
+        solana_sdk::signature::Keypair, // payer (cloned)
+        SigningKey,
+        Pubkey,
+        Keypair, // buyer
+        Keypair, // royalty_recipient
+        Keypair, // platform_fee_recipient
+        Pubkey,  // asset_id
+        i64,     // unix_timestamp at setup
+    ) {
+        let mut ctx = fresh_ctx().await;
+        let payer = ctx.payer.insecure_clone();
+
+        let seller_sk = SigningKey::generate(&mut rand::rngs::OsRng);
+        let seller_pubkey = Pubkey::new_from_array(seller_sk.verifying_key().to_bytes());
+        let buyer = Keypair::new();
+        let r_recv = Keypair::new();
+        let f_recv = Keypair::new();
+
+        for wallet_pk in [
+            &buyer.pubkey(),
+            &seller_pubkey,
+            &r_recv.pubkey(),
+            &f_recv.pubkey(),
+        ] {
+            let t = anchor_lang::solana_program::system_instruction::transfer(
+                &payer.pubkey(),
+                wallet_pk,
+                10_000_000_000,
+            );
+            send_tx(&mut ctx, &payer, &[t]).await.unwrap();
+            ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+        }
+
+        let asset_id = Pubkey::new_unique();
+        send_tx(
+            &mut ctx,
+            &payer,
+            &[init_registries_ix(
+                &payer.pubkey(),
+                asset_id,
+                r_recv.pubkey(),
+                250,
+                f_recv.pubkey(),
+                500,
+                "ar://x".into(),
+                [0u8; 32],
+                "ern:1.0:01HXY0000000000000000000Y1".into(),
+                "1.0".into(),
+            )],
+        )
+        .await
+        .unwrap();
+        ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+
+        send_tx(
+            &mut ctx,
+            &payer,
+            &[set_listing_quote_ix(&payer.pubkey(), asset_id, seller_pubkey, 1)],
+        )
+        .await
+        .unwrap();
+        ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+
+        let now_ts = ctx
+            .banks_client
+            .get_sysvar::<solana_sdk::clock::Clock>()
+            .await
+            .unwrap()
+            .unix_timestamp;
+
+        (ctx, payer, seller_sk, seller_pubkey, buyer, r_recv, f_recv, asset_id, now_ts)
+    }
+
+    #[tokio::test]
+    async fn execute_purchase_rejects_expired_order() {
+        let (mut ctx, _payer, seller_sk, seller_pubkey, buyer, r_recv, f_recv, asset_id, _now) =
+            setup_for_execute_purchase().await;
+
+        let order = SaleOrder {
+            asset_id,
+            seller_wallet: seller_pubkey,
+            price_lamports: 1_000_000_000,
+            listing_nonce: 1,
+            expires_at: 1, // way in the past
+        };
+        let canon = order.canonical_bytes();
+        let sig_bytes: [u8; 64] = seller_sk.sign(&canon).to_bytes();
+        let pk_bytes: [u8; 32] = seller_sk.verifying_key().to_bytes();
+
+        let ed = ed25519_precompile_ix(&pk_bytes, &sig_bytes, &canon);
+        let ex = execute_purchase_ix(
+            &buyer.pubkey(),
+            &seller_pubkey,
+            &r_recv.pubkey(),
+            &f_recv.pubkey(),
+            order,
+            0,
+        );
+
+        let recent = ctx.last_blockhash;
+        let tx = Transaction::new_signed_with_payer(
+            &[ed, ex],
+            Some(&buyer.pubkey()),
+            &[&buyer],
+            recent,
+        );
+        let result = ctx.banks_client.process_transaction(tx).await;
+        assert!(result.is_err(), "expired order must fail");
+    }
+
+    #[tokio::test]
+    async fn execute_purchase_rejects_nonce_mismatch() {
+        // active_nonce = 1, SaleOrder.listing_nonce = 999 → ListingNonceMismatch
+        let (mut ctx, _payer, seller_sk, seller_pubkey, buyer, r_recv, f_recv, asset_id, now_ts) =
+            setup_for_execute_purchase().await;
+
+        let order = SaleOrder {
+            asset_id,
+            seller_wallet: seller_pubkey,
+            price_lamports: 1_000_000_000,
+            listing_nonce: 999, // mismatches the active nonce of 1
+            expires_at: now_ts + 600,
+        };
+        let canon = order.canonical_bytes();
+        let sig_bytes: [u8; 64] = seller_sk.sign(&canon).to_bytes();
+        let pk_bytes: [u8; 32] = seller_sk.verifying_key().to_bytes();
+
+        let ed = ed25519_precompile_ix(&pk_bytes, &sig_bytes, &canon);
+        let ex = execute_purchase_ix(
+            &buyer.pubkey(),
+            &seller_pubkey,
+            &r_recv.pubkey(),
+            &f_recv.pubkey(),
+            order,
+            0,
+        );
+
+        let recent = ctx.last_blockhash;
+        let tx = Transaction::new_signed_with_payer(
+            &[ed, ex],
+            Some(&buyer.pubkey()),
+            &[&buyer],
+            recent,
+        );
+        let result = ctx.banks_client.process_transaction(tx).await;
+        assert!(result.is_err(), "nonce mismatch must fail");
+    }
+
+    #[tokio::test]
+    async fn execute_purchase_rejects_wrong_signing_key() {
+        // Ed25519 instruction is signed by imposter, but SaleOrder.seller_wallet
+        // is the real seller → Ed25519PubkeyMismatch.
+        let (mut ctx, _payer, real_seller_sk, real_seller_pubkey, buyer, r_recv, f_recv, asset_id, now_ts) =
+            setup_for_execute_purchase().await;
+
+        let imposter_sk = SigningKey::generate(&mut rand::rngs::OsRng);
+        let imposter_pk_bytes: [u8; 32] = imposter_sk.verifying_key().to_bytes();
+
+        let order = SaleOrder {
+            asset_id,
+            seller_wallet: real_seller_pubkey, // claims to be real seller
+            price_lamports: 1_000_000_000,
+            listing_nonce: 1,
+            expires_at: now_ts + 600,
+        };
+        let canon = order.canonical_bytes();
+        // Sign with imposter key, but put imposter's pubkey in the Ed25519 instruction.
+        // Our handler will check that the pubkey in the precompile == sale_order.seller_wallet,
+        // which will NOT match (imposter != real seller) → Ed25519PubkeyMismatch.
+        let sig_bytes: [u8; 64] = imposter_sk.sign(&canon).to_bytes();
+
+        let ed = ed25519_precompile_ix(&imposter_pk_bytes, &sig_bytes, &canon);
+        let ex = execute_purchase_ix(
+            &buyer.pubkey(),
+            &real_seller_pubkey,
+            &r_recv.pubkey(),
+            &f_recv.pubkey(),
+            order,
+            0,
+        );
+
+        let recent = ctx.last_blockhash;
+        let tx = Transaction::new_signed_with_payer(
+            &[ed, ex],
+            Some(&buyer.pubkey()),
+            &[&buyer],
+            recent,
+        );
+        let result = ctx.banks_client.process_transaction(tx).await;
+        assert!(
+            result.is_err(),
+            "wrong signing key must fail (Ed25519PubkeyMismatch)"
+        );
+    }
+
+    // Also verify the real_seller_sk variable is used (suppress unused warning)
+    #[allow(dead_code)]
+    fn _uses_real_seller_sk(_: SigningKey) {}
 }
