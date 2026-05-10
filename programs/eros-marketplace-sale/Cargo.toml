@@ -23,6 +23,10 @@ idl-build = ["anchor-lang/idl-build"]
 anchor-lang = { version = "1.0", features = ["init-if-needed"] }
 # mpl-bubblegum 3.0.0 is the latest on crates.io as of 2026-05-10
 mpl-bubblegum = { version = "3.0.0", default-features = false }
+# Solana 3.x disaggregated crates — needed for ed25519 introspection helper
+# (anchor-lang 1.0's solana_program re-export does not expose these)
+solana-instructions-sysvar = "3.0.0"
+solana-sdk-ids = "3.1.0"
 
 [dev-dependencies]
 litesvm = "0.10.0"

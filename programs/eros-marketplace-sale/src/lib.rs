@@ -5,6 +5,7 @@
 
 use anchor_lang::prelude::*;
 
+pub mod ed25519;
 pub mod error;
 pub mod instructions;
 pub mod sale_order;
