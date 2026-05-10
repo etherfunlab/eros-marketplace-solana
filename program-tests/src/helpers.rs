@@ -13,12 +13,29 @@ use solana_sdk::{
 
 /// Spins up a fresh in-process bank with our program loaded.
 ///
-/// Sets `SBF_OUT_DIR` so `solana-program-test` can locate the compiled `.so`
-/// artifact produced by `anchor build` (same workaround used in Phase 1).
+/// Sets `SBF_OUT_DIR` to `target/test-deploy` — a dedicated directory that
+/// contains the program `.so` compiled WITH the `test-without-bubblegum`
+/// feature flag so the Bubblegum CPI block is compiled out.
+///
+/// **Build requirement**: before running `cargo test -p program-tests`, run:
+///   ```
+///   cargo build-sbf \
+///       --manifest-path programs/eros-marketplace-sale/Cargo.toml \
+///       --sbf-out-dir target/test-deploy \
+///       --features test-without-bubblegum
+///   ```
+///
+/// Why not use the production `.so` from `target/deploy`?
+/// `anchor build` compiles without `test-without-bubblegum`, so that `.so`
+/// has the full Bubblegum CPI block. When the test bank tries to invoke the
+/// Bubblegum program ID (which isn't loaded), it fails with `UnsupportedProgramId`.
+/// A dedicated test `.so` avoids this without requiring the inline-processor
+/// approach (which has incompatibilities with Anchor 1.0's CPI syscall stubs
+/// in `solana-program-test 3.x`).
 pub async fn fresh_ctx() -> ProgramTestContext {
     std::env::set_var(
         "SBF_OUT_DIR",
-        concat!(env!("CARGO_MANIFEST_DIR"), "/../target/deploy"),
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../target/test-deploy"),
     );
     let pt = ProgramTest::new("eros_marketplace_sale", eros_marketplace_sale::ID, None);
     pt.start_with_context().await
