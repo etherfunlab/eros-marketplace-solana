@@ -1,5 +1,6 @@
 [toolchain]
-package_manager = "yarn"
+anchor_version = "1.0.2"
+solana_version = "3.1.15"
 
 [features]
 resolution = true
@@ -8,11 +9,12 @@ skip-lint = false
 [programs.localnet]
 eros_marketplace_sale = "Ca8tTnDxUcXd1FKDaCc1x8m8faEU6NB3jfLhDNvrZK8a"
 
+[programs.devnet]
+eros_marketplace_sale = "Ca8tTnDxUcXd1FKDaCc1x8m8faEU6NB3jfLhDNvrZK8a"
+
 [provider]
-cluster = "localnet"
+cluster = "Localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "cargo test"
-
-[hooks]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
