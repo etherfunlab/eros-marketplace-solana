@@ -12,6 +12,8 @@ pub mod sale_order;
 pub mod seeds;
 pub mod state;
 
+pub use sale_order::SaleOrder;
+
 // Scaffold instruction kept for the existing litesvm integration test.
 use instructions::*;
 
@@ -20,6 +22,7 @@ use instructions::*;
 // adjacent to the `#[derive(Accounts)]` struct — i.e. inside the instruction submodules, not at
 // the crate root. We re-export them here so the macro-generated code can resolve the paths.
 pub(crate) use instructions::cancel_listing::__client_accounts_cancel_listing;
+pub(crate) use instructions::execute_purchase::__client_accounts_execute_purchase;
 pub(crate) use instructions::housekeeping_clear::__client_accounts_housekeeping_clear;
 pub(crate) use instructions::init_registries::__client_accounts_init_registries;
 pub(crate) use instructions::initialize::__client_accounts_initialize;
@@ -80,5 +83,13 @@ pub mod eros_marketplace_sale {
         seller_wallet: Pubkey,
     ) -> Result<()> {
         instructions::housekeeping_clear::handler(ctx, asset_id, seller_wallet)
+    }
+
+    pub fn execute_purchase(
+        ctx: Context<ExecutePurchase>,
+        sale_order: SaleOrder,
+        ed25519_ix_index: u8,
+    ) -> Result<()> {
+        instructions::execute_purchase::handler(ctx, sale_order, ed25519_ix_index)
     }
 }
