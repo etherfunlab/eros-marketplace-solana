@@ -19,6 +19,7 @@ use instructions::*;
 // the crate root. We re-export them here so the macro-generated code can resolve the paths.
 pub(crate) use instructions::init_registries::__client_accounts_init_registries;
 pub(crate) use instructions::initialize::__client_accounts_initialize;
+pub(crate) use instructions::set_listing_quote::__client_accounts_set_listing_quote;
 
 declare_id!("Ca8tTnDxUcXd1FKDaCc1x8m8faEU6NB3jfLhDNvrZK8a");
 
@@ -54,5 +55,14 @@ pub mod eros_marketplace_sale {
             persona_id,
             spec_version,
         )
+    }
+
+    pub fn set_listing_quote(
+        ctx: Context<SetListingQuote>,
+        asset_id: Pubkey,
+        seller_wallet: Pubkey,
+        listing_nonce: u64,
+    ) -> Result<()> {
+        instructions::set_listing_quote::handler(ctx, asset_id, seller_wallet, listing_nonce)
     }
 }
