@@ -7,6 +7,7 @@ use anchor_lang::prelude::*;
 
 pub mod error;
 pub mod seeds;
+pub mod state;
 
 // Scaffold instruction kept for the existing litesvm integration test.
 mod instructions;
