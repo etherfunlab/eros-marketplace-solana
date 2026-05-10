@@ -237,7 +237,86 @@ pub fn ed25519_precompile_ix(
     }
 }
 
+// ── Phase 6: Bubblegum placeholder accounts for unit tests ──────────────────
+//
+// When the `test-without-bubblegum` feature is active (as it is for all unit
+// tests in this crate), the Bubblegum CPI block is compiled out but the
+// accounts struct still needs to be populated. `BubblegumPlaceholders` provides
+// dummy values so existing tests can pass `BubblegumPlaceholders::default()`.
+
+use eros_marketplace_sale::seeds::SALE_AUTHORITY_SEED;
+
+/// Placeholder Bubblegum accounts for unit tests.
+///
+/// All pubkeys are unique sentinels — the on-chain program accepts them because
+/// the CPI block is gated behind `#[cfg(not(feature = "test-without-bubblegum"))]`.
+#[derive(Debug)]
+pub struct BubblegumPlaceholders {
+    pub sale_authority: Pubkey,
+    pub tree_config: Pubkey,
+    pub merkle_tree: Pubkey,
+    pub log_wrapper: Pubkey,
+    pub compression_program: Pubkey,
+    pub bubblegum_program: Pubkey,
+    pub root: [u8; 32],
+    pub data_hash: [u8; 32],
+    pub creator_hash: [u8; 32],
+    pub nonce: u64,
+    pub index: u32,
+    /// Merkle proof path nodes (empty for unit tests).
+    pub proof: Vec<Pubkey>,
+}
+
+impl BubblegumPlaceholders {
+    /// Derive the real sale_authority PDA for a given (asset_id, seller) pair.
+    /// Use this when you want the PDA to match what the program derives on-chain.
+    pub fn with_pda(asset_id: &Pubkey, seller: &Pubkey) -> Self {
+        let (sale_authority, _) = Pubkey::find_program_address(
+            &[SALE_AUTHORITY_SEED, asset_id.as_ref(), seller.as_ref()],
+            &eros_marketplace_sale::ID,
+        );
+        Self {
+            sale_authority,
+            ..Self::default()
+        }
+    }
+}
+
+impl Default for BubblegumPlaceholders {
+    fn default() -> Self {
+        Self {
+            // Any pubkey for PDA placeholder — no PDA check when CPI is gated.
+            sale_authority: Pubkey::new_unique(),
+            tree_config: Pubkey::new_unique(),
+            merkle_tree: Pubkey::new_unique(),
+            log_wrapper: Pubkey::new_unique(),
+            compression_program: Pubkey::new_unique(),
+            // Use the real Bubblegum program ID; the address constraint on the
+            // account always validates it even in test-without-bubblegum mode.
+            bubblegum_program: mpl_bubblegum::ID,
+            root: [0u8; 32],
+            data_hash: [0u8; 32],
+            creator_hash: [0u8; 32],
+            nonce: 0,
+            index: 0,
+            proof: vec![],
+        }
+    }
+}
+
+/// Derives the `sale_authority` PDA for a given `(asset_id, seller)` pair.
+pub fn sale_authority_pda(asset_id: &Pubkey, seller: &Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(
+        &[SALE_AUTHORITY_SEED, asset_id.as_ref(), seller.as_ref()],
+        &eros_marketplace_sale::ID,
+    )
+}
+
 /// Builds an `execute_purchase` instruction.
+///
+/// `bb` carries the Bubblegum-related accounts and proof args. Under the
+/// `test-without-bubblegum` feature flag, the Bubblegum CPI is skipped
+/// on-chain, so dummy values from `BubblegumPlaceholders::default()` work.
 pub fn execute_purchase_ix(
     buyer: &Pubkey,
     seller: &Pubkey,
@@ -245,12 +324,16 @@ pub fn execute_purchase_ix(
     platform_fee_recipient: &Pubkey,
     sale_order: SaleOrder,
     ed25519_ix_index: u8,
+    bb: BubblegumPlaceholders,
 ) -> Instruction {
     use eros_marketplace_sale::accounts::ExecutePurchase as Accounts_;
     use eros_marketplace_sale::instruction::ExecutePurchase as Data_;
 
     let (royalty_pda, _) = royalty_registry_pda(&sale_order.asset_id);
     let (listing_pda, _) = listing_state_pda(&sale_order.asset_id, &sale_order.seller_wallet);
+
+    // Derive the real sale_authority PDA so it satisfies the seeds constraint.
+    let (sale_authority, _) = sale_authority_pda(&sale_order.asset_id, seller);
 
     let accounts = Accounts_ {
         buyer: *buyer,
@@ -261,15 +344,36 @@ pub fn execute_purchase_ix(
         listing_state: listing_pda,
         instructions_sysvar: solana_sdk_ids::sysvar::instructions::ID,
         system_program: anchor_lang::solana_program::system_program::ID,
+        sale_authority,
+        tree_config: bb.tree_config,
+        merkle_tree: bb.merkle_tree,
+        log_wrapper: bb.log_wrapper,
+        compression_program: bb.compression_program,
+        bubblegum_program: bb.bubblegum_program,
     };
     let data = Data_ {
         sale_order,
         ed25519_ix_index,
+        root: bb.root,
+        data_hash: bb.data_hash,
+        creator_hash: bb.creator_hash,
+        nonce: bb.nonce,
+        index: bb.index,
     };
 
-    Instruction {
+    let mut ix = Instruction {
         program_id: eros_marketplace_sale::ID,
         accounts: accounts.to_account_metas(None),
         data: data.data(),
+    };
+
+    // Append proof nodes as additional read-only non-signer accounts.
+    for proof_node in &bb.proof {
+        ix.accounts.push(solana_sdk::instruction::AccountMeta::new_readonly(
+            *proof_node,
+            false,
+        ));
     }
+
+    ix
 }

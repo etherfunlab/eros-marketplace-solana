@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-eros-marketplace-sale = { path = "../programs/eros-marketplace-sale", features = ["no-entrypoint"] }
+eros-marketplace-sale = { path = "../programs/eros-marketplace-sale", features = ["no-entrypoint", "test-without-bubblegum"] }
 anchor-lang = "1.0"
 # solana-program-test 3.x matches the installed Agave 3.1.15 runtime
 solana-program-test = "3"
@@ -16,6 +16,8 @@ ed25519-dalek = "2"
 rand = "0.8"
 # needed for ed25519 program ID constant in test helpers
 solana-sdk-ids = "3"
+# needed for mpl_bubblegum::ID in BubblegumPlaceholders
+mpl-bubblegum = { version = "3.0.0", default-features = false }
 
 [lib]
 path = "src/lib.rs"

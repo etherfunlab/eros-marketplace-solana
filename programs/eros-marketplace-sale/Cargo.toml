@@ -15,6 +15,11 @@ no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
 cpi = ["no-entrypoint"]
+# When active, the Bubblegum CPI block in execute_purchase is compiled out so
+# that unit tests (which run on solana-program-test, not a full validator) can
+# exercise the SOL-split and nonce-clearing logic without requiring real cNFT
+# state on-chain.
+test-without-bubblegum = []
 default = []
 idl-build = ["anchor-lang/idl-build"]
 

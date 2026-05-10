@@ -12,6 +12,7 @@ pub mod sale_order;
 pub mod seeds;
 pub mod state;
 
+
 pub use sale_order::SaleOrder;
 
 // Scaffold instruction kept for the existing litesvm integration test.
@@ -85,11 +86,25 @@ pub mod eros_marketplace_sale {
         instructions::housekeeping_clear::handler(ctx, asset_id, seller_wallet)
     }
 
-    pub fn execute_purchase(
-        ctx: Context<ExecutePurchase>,
+    pub fn execute_purchase<'info>(
+        ctx: Context<'info, ExecutePurchase<'info>>,
         sale_order: SaleOrder,
         ed25519_ix_index: u8,
+        root: [u8; 32],
+        data_hash: [u8; 32],
+        creator_hash: [u8; 32],
+        nonce: u64,
+        index: u32,
     ) -> Result<()> {
-        instructions::execute_purchase::handler(ctx, sale_order, ed25519_ix_index)
+        instructions::execute_purchase::handler(
+            ctx,
+            sale_order,
+            ed25519_ix_index,
+            root,
+            data_hash,
+            creator_hash,
+            nonce,
+            index,
+        )
     }
 }

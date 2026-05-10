@@ -3980,9 +3980,13 @@ version = "0.0.0"
 dependencies = [
  "anchor-lang",
  "borsh",
+ "ed25519-dalek 2.2.0",
  "eros-marketplace-sale",
+ "mpl-bubblegum",
+ "rand 0.8.6",
  "solana-program-test",
  "solana-sdk",
+ "solana-sdk-ids",
  "tokio",
 ]
 

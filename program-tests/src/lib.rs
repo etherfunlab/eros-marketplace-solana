@@ -420,6 +420,7 @@ mod tests {
             &platform_fee_recipient.pubkey(),
             sale_order,
             0, // ed25519 precompile is at index 0
+            BubblegumPlaceholders::default(),
         );
 
         let recent = ctx.last_blockhash;
@@ -561,6 +562,7 @@ mod tests {
             &f_recv.pubkey(),
             order,
             0,
+            BubblegumPlaceholders::default(),
         );
 
         let recent = ctx.last_blockhash;
@@ -599,6 +601,7 @@ mod tests {
             &f_recv.pubkey(),
             order,
             0,
+            BubblegumPlaceholders::default(),
         );
 
         let recent = ctx.last_blockhash;
@@ -643,6 +646,7 @@ mod tests {
             &f_recv.pubkey(),
             order,
             0,
+            BubblegumPlaceholders::default(),
         );
 
         let recent = ctx.last_blockhash;
