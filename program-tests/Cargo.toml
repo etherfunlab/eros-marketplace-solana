@@ -1,0 +1,17 @@
+[package]
+name = "program-tests"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+eros-marketplace-sale = { path = "../programs/eros-marketplace-sale", features = ["no-entrypoint"] }
+anchor-lang = "1.0"
+# solana-program-test 3.x matches the installed Agave 3.1.15 runtime
+solana-program-test = "3"
+solana-sdk = "3"
+tokio = { version = "1", features = ["rt", "macros"] }
+borsh = "1"
+
+[lib]
+path = "src/lib.rs"
