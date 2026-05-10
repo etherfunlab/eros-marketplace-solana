@@ -7,6 +7,7 @@ use anchor_lang::prelude::*;
 
 pub mod error;
 pub mod instructions;
+pub mod sale_order;
 pub mod seeds;
 pub mod state;
 
