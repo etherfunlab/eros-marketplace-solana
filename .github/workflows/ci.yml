@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+  SOLANA_VERSION: "stable"
+  ANCHOR_VERSION: "1.0.2"
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (from rust-toolchain.toml)
+        # rust-toolchain.toml pins channel = "1.89.0" with rustfmt + clippy;
+        # rustup picks it up automatically on first cargo invocation.
+        run: rustup show
+
+      - name: Install Solana CLI (Anza)
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/${{ env.SOLANA_VERSION }}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Verify Solana version
+        run: solana --version
+
+      - name: Install avm + Anchor ${{ env.ANCHOR_VERSION }}
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+          avm install ${{ env.ANCHOR_VERSION }}
+          avm use ${{ env.ANCHOR_VERSION }}
+          anchor --version
+
+      - name: Cache cargo registry + git sources
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-
+
+      # target/ is intentionally NOT cached: the SBF build embeds the Solana
+      # toolchain version in object files; a stale cache can produce silent
+      # mismatches. Rebuild is fast enough on ubuntu-latest with registry cache.
+
+      - name: anchor build (production .so → target/deploy/)
+        run: anchor build
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy (workspace, all targets)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Build test .so with test-without-bubblegum feature
+        # program-tests/src/helpers.rs sets SBF_OUT_DIR=target/test-deploy at
+        # runtime so ProgramTest loads the feature-gated .so rather than the
+        # production one from target/deploy/.  We build it here and place it in
+        # that directory so the test run can find it.
+        #
+        # cargo build-sbf has a native --features flag (unlike plain cargo where
+        # features must be passed after `--`).  --sbf-out-dir places the .so
+        # directly into target/test-deploy/ without a manual cp.
+        run: |
+          mkdir -p target/test-deploy
+          cargo build-sbf \
+            --manifest-path programs/eros-marketplace-sale/Cargo.toml \
+            --sbf-out-dir target/test-deploy \
+            --features test-without-bubblegum
+
+      - name: program-tests (unit + instruction tests)
+        run: cargo test -p program-tests --lib
+
+      - name: anchor test --skip-build (smoke integration)
+        # Reuses the production .so produced by the earlier `anchor build` step.
+        # Starts a local validator, deploys the program, and runs the TS mocha
+        # suite under tests/.
+        run: anchor test --skip-build
