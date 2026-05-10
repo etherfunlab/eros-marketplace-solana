@@ -17,6 +17,8 @@ use instructions::*;
 // instruction's Context<X> type. Those `pub(crate) mod __client_accounts_X` modules are emitted
 // adjacent to the `#[derive(Accounts)]` struct — i.e. inside the instruction submodules, not at
 // the crate root. We re-export them here so the macro-generated code can resolve the paths.
+pub(crate) use instructions::cancel_listing::__client_accounts_cancel_listing;
+pub(crate) use instructions::housekeeping_clear::__client_accounts_housekeeping_clear;
 pub(crate) use instructions::init_registries::__client_accounts_init_registries;
 pub(crate) use instructions::initialize::__client_accounts_initialize;
 pub(crate) use instructions::set_listing_quote::__client_accounts_set_listing_quote;
@@ -64,5 +66,17 @@ pub mod eros_marketplace_sale {
         listing_nonce: u64,
     ) -> Result<()> {
         instructions::set_listing_quote::handler(ctx, asset_id, seller_wallet, listing_nonce)
+    }
+
+    pub fn cancel_listing(ctx: Context<CancelListing>) -> Result<()> {
+        instructions::cancel_listing::handler(ctx)
+    }
+
+    pub fn housekeeping_clear(
+        ctx: Context<HousekeepingClear>,
+        asset_id: Pubkey,
+        seller_wallet: Pubkey,
+    ) -> Result<()> {
+        instructions::housekeeping_clear::handler(ctx, asset_id, seller_wallet)
     }
 }
