@@ -8,9 +8,13 @@ mod helpers;
 #[cfg(test)]
 mod tests {
     use super::helpers::*;
+    use ed25519_dalek::{Signer as DalekSigner, SigningKey};
     use eros_marketplace_sale::state::{ManifestRegistry, RoyaltyRegistry};
+    use eros_marketplace_sale::SaleOrder;
     use solana_sdk::pubkey::Pubkey;
+    use solana_sdk::signature::Keypair;
     use solana_sdk::signer::Signer;
+    use solana_sdk::transaction::Transaction;
 
     fn sample_init_args() -> (
         Pubkey, // asset_id
@@ -328,5 +332,131 @@ mod tests {
         );
         let result = ctx.banks_client.process_transaction(tx).await;
         assert!(result.is_err(), "non-seller cancel must fail");
+    }
+
+    // ── Phase 5 tests ────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn execute_purchase_happy_path_no_bubblegum() {
+        let mut ctx = fresh_ctx().await;
+        let payer = ctx.payer.insecure_clone();
+
+        // Seller is an ed25519 keypair whose verifying key bytes ARE the Solana pubkey.
+        let seller_sk = SigningKey::generate(&mut rand::rngs::OsRng);
+        let seller_pk_bytes: [u8; 32] = seller_sk.verifying_key().to_bytes();
+        let seller_pubkey = Pubkey::new_from_array(seller_pk_bytes);
+
+        let buyer = Keypair::new();
+        let royalty_recipient = Keypair::new();
+        let platform_fee_recipient = Keypair::new();
+
+        // Fund all four wallets with 10 SOL each.
+        for wallet_pk in [
+            &buyer.pubkey(),
+            &seller_pubkey,
+            &royalty_recipient.pubkey(),
+            &platform_fee_recipient.pubkey(),
+        ] {
+            let t = anchor_lang::solana_program::system_instruction::transfer(
+                &payer.pubkey(),
+                wallet_pk,
+                10_000_000_000,
+            );
+            send_tx(&mut ctx, &payer, &[t]).await.unwrap();
+            ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+        }
+
+        // Init registries: 250 bps royalty, 500 bps platform fee.
+        let asset_id = Pubkey::new_unique();
+        let init_ix = init_registries_ix(
+            &payer.pubkey(),
+            asset_id,
+            royalty_recipient.pubkey(),
+            250,
+            platform_fee_recipient.pubkey(),
+            500,
+            "ar://abc".to_string(),
+            [0u8; 32],
+            "ern:1.0:01HXY0000000000000000000Y1".to_string(),
+            "1.0".to_string(),
+        );
+        send_tx(&mut ctx, &payer, &[init_ix]).await.unwrap();
+        ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+
+        // Set listing quote nonce=1.
+        send_tx(
+            &mut ctx,
+            &payer,
+            &[set_listing_quote_ix(&payer.pubkey(), asset_id, seller_pubkey, 1)],
+        )
+        .await
+        .unwrap();
+        ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+
+        // Build SaleOrder + sign it with seller's ed25519 key.
+        let now_seconds = ctx
+            .banks_client
+            .get_sysvar::<solana_sdk::clock::Clock>()
+            .await
+            .unwrap()
+            .unix_timestamp;
+        let sale_order = SaleOrder {
+            asset_id,
+            seller_wallet: seller_pubkey,
+            price_lamports: 1_000_000_000,
+            listing_nonce: 1,
+            expires_at: now_seconds + 600,
+        };
+        let canonical = sale_order.canonical_bytes();
+        let sig = seller_sk.sign(&canonical);
+        let sig_bytes: [u8; 64] = sig.to_bytes();
+
+        // Two-ix tx: [0] Ed25519 precompile, [1] execute_purchase
+        let ed_ix = ed25519_precompile_ix(&seller_pk_bytes, &sig_bytes, &canonical);
+        let exec_ix = execute_purchase_ix(
+            &buyer.pubkey(),
+            &seller_pubkey,
+            &royalty_recipient.pubkey(),
+            &platform_fee_recipient.pubkey(),
+            sale_order,
+            0, // ed25519 precompile is at index 0
+        );
+
+        let recent = ctx.last_blockhash;
+        let tx = Transaction::new_signed_with_payer(
+            &[ed_ix, exec_ix],
+            Some(&buyer.pubkey()),
+            &[&buyer],
+            recent,
+        );
+        ctx.banks_client
+            .process_transaction(tx)
+            .await
+            .expect("execute_purchase should succeed");
+
+        // Verify SOL splits.
+        // price = 1_000_000_000
+        // royalty = 1_000_000_000 * 250 / 10_000 = 25_000_000
+        // fee     = 1_000_000_000 * 500 / 10_000 = 50_000_000
+        // proceeds= 1_000_000_000 - 25_000_000 - 50_000_000 = 925_000_000
+        let seller_bal = ctx.banks_client.get_balance(seller_pubkey).await.unwrap();
+        let royalty_bal = ctx
+            .banks_client
+            .get_balance(royalty_recipient.pubkey())
+            .await
+            .unwrap();
+        let fee_bal = ctx
+            .banks_client
+            .get_balance(platform_fee_recipient.pubkey())
+            .await
+            .unwrap();
+        assert_eq!(seller_bal, 10_000_000_000 + 925_000_000, "seller proceeds");
+        assert_eq!(royalty_bal, 10_000_000_000 + 25_000_000, "royalty");
+        assert_eq!(fee_bal, 10_000_000_000 + 50_000_000, "platform fee");
+
+        // Verify listing nonce was cleared.
+        let (listing_pda, _) = listing_state_pda(&asset_id, &seller_pubkey);
+        let s = read_listing(&mut ctx, listing_pda).await;
+        assert_eq!(s.active_nonce, None, "listing nonce must be cleared");
     }
 }

@@ -12,6 +12,10 @@ solana-program-test = "3"
 solana-sdk = "3"
 tokio = { version = "1", features = ["rt", "macros"] }
 borsh = "1"
+ed25519-dalek = "2"
+rand = "0.8"
+# needed for ed25519 program ID constant in test helpers
+solana-sdk-ids = "3"
 
 [lib]
 path = "src/lib.rs"
