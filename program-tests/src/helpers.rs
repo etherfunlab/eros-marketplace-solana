@@ -125,6 +125,51 @@ pub fn set_listing_quote_ix(
     }
 }
 
+/// Builds the `cancel_listing` instruction using Anchor's generated client types.
+pub fn cancel_listing_ix(seller: &Pubkey, listing_pda: Pubkey) -> Instruction {
+    use eros_marketplace_sale::accounts::CancelListing as Accounts_;
+    use eros_marketplace_sale::instruction::CancelListing as Data_;
+
+    let accounts = Accounts_ {
+        seller: *seller,
+        listing_state: listing_pda,
+    };
+    let data = Data_ {};
+
+    Instruction {
+        program_id: eros_marketplace_sale::ID,
+        accounts: accounts.to_account_metas(None),
+        data: data.data(),
+    }
+}
+
+/// Builds the `housekeeping_clear` instruction using Anchor's generated client types.
+pub fn housekeeping_clear_ix(
+    admin: &Pubkey,
+    asset_id: Pubkey,
+    seller_wallet: Pubkey,
+) -> Instruction {
+    use eros_marketplace_sale::accounts::HousekeepingClear as Accounts_;
+    use eros_marketplace_sale::instruction::HousekeepingClear as Data_;
+
+    let (listing_pda, _) = listing_state_pda(&asset_id, &seller_wallet);
+
+    let accounts = Accounts_ {
+        admin: *admin,
+        listing_state: listing_pda,
+    };
+    let data = Data_ {
+        asset_id,
+        seller_wallet,
+    };
+
+    Instruction {
+        program_id: eros_marketplace_sale::ID,
+        accounts: accounts.to_account_metas(None),
+        data: data.data(),
+    }
+}
+
 /// Builds and submits a transaction with `payer` as the fee-payer and sole signer.
 pub async fn send_tx(
     ctx: &mut ProgramTestContext,

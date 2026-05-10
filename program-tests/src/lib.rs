@@ -240,4 +240,93 @@ mod tests {
             "second init must fail because the PDA already exists"
         );
     }
+
+    #[tokio::test]
+    async fn cancel_listing_clears_active_nonce() {
+        let mut ctx = fresh_ctx().await;
+        let payer = ctx.payer.insecure_clone();
+        let seller = solana_sdk::signature::Keypair::new();
+        let asset_id = Pubkey::new_unique();
+
+        // Fund seller so they can pay for the cancel tx fee
+        let lamports = 1_000_000_000;
+        let transfer = anchor_lang::solana_program::system_instruction::transfer(
+            &payer.pubkey(),
+            &seller.pubkey(),
+            lamports,
+        );
+        send_tx(&mut ctx, &payer, &[transfer]).await.unwrap();
+        ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+
+        // List
+        send_tx(
+            &mut ctx,
+            &payer,
+            &[set_listing_quote_ix(&payer.pubkey(), asset_id, seller.pubkey(), 7)],
+        )
+        .await
+        .unwrap();
+        ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+
+        // Cancel — seller signs
+        let (pda, _) = listing_state_pda(&asset_id, &seller.pubkey());
+        let cancel = cancel_listing_ix(&seller.pubkey(), pda);
+        let recent = ctx.last_blockhash;
+        let tx = solana_sdk::transaction::Transaction::new_signed_with_payer(
+            &[cancel],
+            Some(&seller.pubkey()),
+            &[&seller],
+            recent,
+        );
+        ctx.banks_client
+            .process_transaction(tx)
+            .await
+            .expect("cancel ok");
+
+        let s = read_listing(&mut ctx, pda).await;
+        assert_eq!(s.active_nonce, None);
+        assert_eq!(s.last_seen_nonce, 7); // monotonic mark stays
+    }
+
+    #[tokio::test]
+    async fn cancel_listing_rejects_non_seller() {
+        let mut ctx = fresh_ctx().await;
+        let payer = ctx.payer.insecure_clone();
+        let seller = solana_sdk::signature::Keypair::new();
+        let imposter = solana_sdk::signature::Keypair::new();
+        let asset_id = Pubkey::new_unique();
+
+        // Fund seller and imposter
+        for kp in [&seller, &imposter] {
+            let t = anchor_lang::solana_program::system_instruction::transfer(
+                &payer.pubkey(),
+                &kp.pubkey(),
+                1_000_000_000,
+            );
+            send_tx(&mut ctx, &payer, &[t]).await.unwrap();
+            ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+        }
+
+        send_tx(
+            &mut ctx,
+            &payer,
+            &[set_listing_quote_ix(&payer.pubkey(), asset_id, seller.pubkey(), 1)],
+        )
+        .await
+        .unwrap();
+        ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+
+        // Imposter tries to cancel seller's listing — must fail
+        let (pda, _) = listing_state_pda(&asset_id, &seller.pubkey());
+        let cancel = cancel_listing_ix(&imposter.pubkey(), pda);
+        let recent = ctx.last_blockhash;
+        let tx = solana_sdk::transaction::Transaction::new_signed_with_payer(
+            &[cancel],
+            Some(&imposter.pubkey()),
+            &[&imposter],
+            recent,
+        );
+        let result = ctx.banks_client.process_transaction(tx).await;
+        assert!(result.is_err(), "non-seller cancel must fail");
+    }
 }
