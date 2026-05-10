@@ -85,6 +85,46 @@ pub fn init_registries_ix(
     }
 }
 
+use eros_marketplace_sale::seeds::LISTING_STATE_SEED;
+
+/// Derives the `ListingState` PDA for a given `(asset_id, seller)` pair.
+pub fn listing_state_pda(asset_id: &Pubkey, seller: &Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(
+        &[LISTING_STATE_SEED, asset_id.as_ref(), seller.as_ref()],
+        &eros_marketplace_sale::ID,
+    )
+}
+
+/// Builds the `set_listing_quote` instruction using Anchor's generated client types.
+pub fn set_listing_quote_ix(
+    payer: &Pubkey,
+    asset_id: Pubkey,
+    seller_wallet: Pubkey,
+    listing_nonce: u64,
+) -> Instruction {
+    use eros_marketplace_sale::accounts::SetListingQuote as Accounts_;
+    use eros_marketplace_sale::instruction::SetListingQuote as Data_;
+
+    let (listing_pda, _) = listing_state_pda(&asset_id, &seller_wallet);
+
+    let accounts = Accounts_ {
+        payer: *payer,
+        listing_state: listing_pda,
+        system_program: anchor_lang::solana_program::system_program::ID,
+    };
+    let data = Data_ {
+        asset_id,
+        seller_wallet,
+        listing_nonce,
+    };
+
+    Instruction {
+        program_id: eros_marketplace_sale::ID,
+        accounts: accounts.to_account_metas(None),
+        data: data.data(),
+    }
+}
+
 /// Builds and submits a transaction with `payer` as the fee-payer and sole signer.
 pub async fn send_tx(
     ctx: &mut ProgramTestContext,

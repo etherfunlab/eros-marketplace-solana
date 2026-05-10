@@ -105,6 +105,107 @@ mod tests {
         assert_eq!(m.spec_version, sv);
     }
 
+    use eros_marketplace_sale::state::ListingState;
+
+    async fn read_listing(
+        ctx: &mut solana_program_test::ProgramTestContext,
+        pda: Pubkey,
+    ) -> ListingState {
+        let acct = ctx
+            .banks_client
+            .get_account(pda)
+            .await
+            .unwrap()
+            .expect("listing exists");
+        anchor_lang::AccountDeserialize::try_deserialize(&mut acct.data.as_slice()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn set_listing_quote_first_call_initializes() {
+        let mut ctx = fresh_ctx().await;
+        let payer = ctx.payer.insecure_clone();
+        let asset_id = Pubkey::new_unique();
+        let seller = Pubkey::new_unique();
+
+        let ix = set_listing_quote_ix(&payer.pubkey(), asset_id, seller, 1);
+        send_tx(&mut ctx, &payer, &[ix]).await.expect("first listing ok");
+
+        let (pda, _) = listing_state_pda(&asset_id, &seller);
+        let s = read_listing(&mut ctx, pda).await;
+        assert_eq!(s.asset_id, asset_id);
+        assert_eq!(s.seller_wallet, seller);
+        assert_eq!(s.active_nonce, Some(1));
+        assert_eq!(s.last_seen_nonce, 1);
+    }
+
+    #[tokio::test]
+    async fn set_listing_quote_relisting_advances_nonce() {
+        let mut ctx = fresh_ctx().await;
+        let payer = ctx.payer.insecure_clone();
+        let asset_id = Pubkey::new_unique();
+        let seller = Pubkey::new_unique();
+
+        send_tx(
+            &mut ctx,
+            &payer,
+            &[set_listing_quote_ix(&payer.pubkey(), asset_id, seller, 1)],
+        )
+        .await
+        .unwrap();
+
+        ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+        send_tx(
+            &mut ctx,
+            &payer,
+            &[set_listing_quote_ix(&payer.pubkey(), asset_id, seller, 5)],
+        )
+        .await
+        .unwrap();
+
+        let (pda, _) = listing_state_pda(&asset_id, &seller);
+        let s = read_listing(&mut ctx, pda).await;
+        assert_eq!(s.active_nonce, Some(5));
+        assert_eq!(s.last_seen_nonce, 5);
+    }
+
+    #[tokio::test]
+    async fn set_listing_quote_rejects_non_monotonic_nonce() {
+        let mut ctx = fresh_ctx().await;
+        let payer = ctx.payer.insecure_clone();
+        let asset_id = Pubkey::new_unique();
+        let seller = Pubkey::new_unique();
+
+        send_tx(
+            &mut ctx,
+            &payer,
+            &[set_listing_quote_ix(&payer.pubkey(), asset_id, seller, 5)],
+        )
+        .await
+        .unwrap();
+
+        ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+
+        // Equal nonce: must fail (must be strictly greater)
+        let result = send_tx(
+            &mut ctx,
+            &payer,
+            &[set_listing_quote_ix(&payer.pubkey(), asset_id, seller, 5)],
+        )
+        .await;
+        assert!(result.is_err(), "equal nonce must fail");
+
+        ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+
+        // Lower nonce: must fail
+        let result = send_tx(
+            &mut ctx,
+            &payer,
+            &[set_listing_quote_ix(&payer.pubkey(), asset_id, seller, 3)],
+        )
+        .await;
+        assert!(result.is_err(), "lower nonce must fail");
+    }
+
     /// Double-init rejection: calling init_registries twice for the same asset_id must fail.
     #[tokio::test]
     async fn init_registries_double_init_fails() {
