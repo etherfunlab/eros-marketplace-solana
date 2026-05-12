@@ -1,6 +1,6 @@
 [package]
 name = "eros-marketplace-sale"
-version = "0.1.0"
+version = "0.1.1-preaudit"
 description = "Atomic on-chain settlement for eros-nft v1 cards"
 edition = "2021"
 license = "Apache-2.0"
