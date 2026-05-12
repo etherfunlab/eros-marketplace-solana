@@ -73,7 +73,7 @@ jobs:
         run: |
           mkdir -p target/test-deploy
           cargo build-sbf \
-            --manifest-path programs/eros-marketplace-sale/Cargo.toml \
+            --manifest-path programs/eros-marketplace-solana/Cargo.toml \
             --sbf-out-dir target/test-deploy \
             --features test-without-bubblegum
 

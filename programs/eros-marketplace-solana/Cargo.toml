@@ -1,5 +1,5 @@
 [package]
-name = "eros-marketplace-sale"
+name = "eros-marketplace-solana"
 version = "0.1.1-preaudit"
 description = "Atomic on-chain settlement for eros-nft v1 cards"
 edition = "2021"
@@ -8,7 +8,7 @@ publish = false
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "eros_marketplace_sale"
+name = "eros_marketplace_solana"
 
 [features]
 no-entrypoint = []

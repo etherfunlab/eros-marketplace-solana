@@ -1,8 +1,8 @@
-# eros-marketplace-sale
+# eros-marketplace-solana
 
 > Atomic on-chain settlement for [eros-nft](https://github.com/etherfunlab/eros-nft) v1 cards on Solana cNFT.
 
-[![CI](https://github.com/etherfunlab/eros-marketplace-sale/actions/workflows/ci.yml/badge.svg)](https://github.com/etherfunlab/eros-marketplace-sale/actions/workflows/ci.yml)
+[![CI](https://github.com/etherfunlab/eros-marketplace-solana/actions/workflows/ci.yml/badge.svg)](https://github.com/etherfunlab/eros-marketplace-solana/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache--2.0-green.svg)](LICENSE)
 
 ## What this is
@@ -24,7 +24,7 @@ Off-chain (marketplace svc):
 On-chain at purchase:
   - Buyer submits a tx with TWO instructions:
     1. Solana Ed25519Program: verifies seller's sig over canonical(SaleOrder).
-    2. eros_marketplace_sale::execute_purchase: reads back the precompile,
+    2. eros_marketplace_solana::execute_purchase: reads back the precompile,
        checks expiry/nonce/owner, computes royalty + platform fee + seller
        proceeds from the immutable RoyaltyRegistry, transfers SOL (3 outflows),
        and CPI-transfers the cNFT via Bubblegum (program PDA = leaf delegate).
@@ -44,7 +44,7 @@ cargo install --git https://github.com/coral-xyz/anchor avm --locked
 avm install 1.0.2 && avm use 1.0.2
 
 anchor build
-cargo test -p program-tests --lib --features eros-marketplace-sale/test-without-bubblegum
+cargo test -p program-tests --lib --features eros-marketplace-solana/test-without-bubblegum
 anchor test
 ```
 

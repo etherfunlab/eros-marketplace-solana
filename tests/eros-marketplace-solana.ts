@@ -1,5 +1,5 @@
 /**
- * eros-marketplace-sale integration smoke test.
+ * eros-marketplace-solana integration smoke test.
  *
  * Phase 7 scope: verify the program loads on the local validator and that
  * `init_registries` works end-to-end (creates both PDAs and stores correct
@@ -12,10 +12,10 @@
 
 import * as anchor from "@anchor-lang/core";
 import { Program } from "@anchor-lang/core";
-import { ErosMarketplaceSale } from "../target/types/eros_marketplace_sale";
+import { ErosMarketplaceSale } from "../target/types/eros_marketplace_solana";
 import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 
-describe("eros-marketplace-sale: smoke", () => {
+describe("eros-marketplace-solana: smoke", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 

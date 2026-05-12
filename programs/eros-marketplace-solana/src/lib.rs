@@ -1,4 +1,4 @@
-//! eros-marketplace-sale: atomic on-chain settlement for eros-nft v1 cards.
+//! eros-marketplace-solana: atomic on-chain settlement for eros-nft v1 cards.
 //!
 //! See README.md and the spec at
 //! eros-docs/docs/superpowers/specs/2026-05-09-eros-chat-marketplace-design.md.
@@ -32,7 +32,7 @@ pub(crate) use instructions::set_listing_quote::__client_accounts_set_listing_qu
 declare_id!("Ca8tTnDxUcXd1FKDaCc1x8m8faEU6NB3jfLhDNvrZK8a");
 
 #[program]
-pub mod eros_marketplace_sale {
+pub mod eros_marketplace_solana {
     use super::*;
 
     pub fn initialize(ctx: Context<Initialize>) -> Result<()> {

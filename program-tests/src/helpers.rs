@@ -1,7 +1,7 @@
-//! Shared test utilities for eros_marketplace_sale program tests.
+//! Shared test utilities for eros_marketplace_solana program tests.
 
 use anchor_lang::{InstructionData, ToAccountMetas};
-use eros_marketplace_sale::seeds::{
+use eros_marketplace_solana::seeds::{
     MANIFEST_REGISTRY_SEED, PROGRAM_CONFIG_SEED, ROYALTY_REGISTRY_SEED,
 };
 use solana_program_test::{ProgramTest, ProgramTestContext};
@@ -22,7 +22,7 @@ use solana_sdk::{
 /// **Build requirement**: before running `cargo test -p program-tests`, run:
 ///   ```
 ///   cargo build-sbf \
-///       --manifest-path programs/eros-marketplace-sale/Cargo.toml \
+///       --manifest-path programs/eros-marketplace-solana/Cargo.toml \
 ///       --sbf-out-dir target/test-deploy \
 ///       --features test-without-bubblegum
 ///   ```
@@ -39,20 +39,20 @@ pub async fn fresh_ctx() -> ProgramTestContext {
         "SBF_OUT_DIR",
         concat!(env!("CARGO_MANIFEST_DIR"), "/../target/test-deploy"),
     );
-    let pt = ProgramTest::new("eros_marketplace_sale", eros_marketplace_sale::ID, None);
+    let pt = ProgramTest::new("eros_marketplace_solana", eros_marketplace_solana::ID, None);
     pt.start_with_context().await
 }
 
 /// Derives the singleton `ProgramConfig` PDA.
 pub fn program_config_pda() -> (Pubkey, u8) {
-    Pubkey::find_program_address(&[PROGRAM_CONFIG_SEED], &eros_marketplace_sale::ID)
+    Pubkey::find_program_address(&[PROGRAM_CONFIG_SEED], &eros_marketplace_solana::ID)
 }
 
 /// Builds the `initialize` ix. `admin` is captured into the ProgramConfig PDA
 /// and gates all subsequent privileged instructions.
 pub fn initialize_ix(payer: &Pubkey, admin: &Pubkey) -> Instruction {
-    use eros_marketplace_sale::accounts::Initialize as Accounts_;
-    use eros_marketplace_sale::instruction::Initialize as Data_;
+    use eros_marketplace_solana::accounts::Initialize as Accounts_;
+    use eros_marketplace_solana::instruction::Initialize as Data_;
 
     let (program_config, _) = program_config_pda();
     let accounts = Accounts_ {
@@ -62,7 +62,7 @@ pub fn initialize_ix(payer: &Pubkey, admin: &Pubkey) -> Instruction {
         system_program: anchor_lang::solana_program::system_program::ID,
     };
     Instruction {
-        program_id: eros_marketplace_sale::ID,
+        program_id: eros_marketplace_solana::ID,
         accounts: accounts.to_account_metas(None),
         data: Data_ {}.data(),
     }
@@ -79,7 +79,7 @@ pub async fn bootstrap_config(ctx: &mut ProgramTestContext, payer: &Keypair) {
 pub fn royalty_registry_pda(asset_id: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[ROYALTY_REGISTRY_SEED, asset_id.as_ref()],
-        &eros_marketplace_sale::ID,
+        &eros_marketplace_solana::ID,
     )
 }
 
@@ -87,7 +87,7 @@ pub fn royalty_registry_pda(asset_id: &Pubkey) -> (Pubkey, u8) {
 pub fn manifest_registry_pda(asset_id: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[MANIFEST_REGISTRY_SEED, asset_id.as_ref()],
-        &eros_marketplace_sale::ID,
+        &eros_marketplace_solana::ID,
     )
 }
 
@@ -106,8 +106,8 @@ pub fn init_registries_ix(
     persona_id: String,
     spec_version: String,
 ) -> Instruction {
-    use eros_marketplace_sale::accounts::InitRegistries as InitRegistriesAccounts;
-    use eros_marketplace_sale::instruction::InitRegistries as InitRegistriesData;
+    use eros_marketplace_solana::accounts::InitRegistries as InitRegistriesAccounts;
+    use eros_marketplace_solana::instruction::InitRegistries as InitRegistriesData;
 
     let (royalty_pda, _) = royalty_registry_pda(&asset_id);
     let (manifest_pda, _) = manifest_registry_pda(&asset_id);
@@ -134,19 +134,19 @@ pub fn init_registries_ix(
     };
 
     Instruction {
-        program_id: eros_marketplace_sale::ID,
+        program_id: eros_marketplace_solana::ID,
         accounts: accounts.to_account_metas(None),
         data: data.data(),
     }
 }
 
-use eros_marketplace_sale::seeds::LISTING_STATE_SEED;
+use eros_marketplace_solana::seeds::LISTING_STATE_SEED;
 
 /// Derives the `ListingState` PDA for a given `(asset_id, seller)` pair.
 pub fn listing_state_pda(asset_id: &Pubkey, seller: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[LISTING_STATE_SEED, asset_id.as_ref(), seller.as_ref()],
-        &eros_marketplace_sale::ID,
+        &eros_marketplace_solana::ID,
     )
 }
 
@@ -158,8 +158,8 @@ pub fn set_listing_quote_ix(
     seller_wallet: Pubkey,
     listing_nonce: u64,
 ) -> Instruction {
-    use eros_marketplace_sale::accounts::SetListingQuote as Accounts_;
-    use eros_marketplace_sale::instruction::SetListingQuote as Data_;
+    use eros_marketplace_solana::accounts::SetListingQuote as Accounts_;
+    use eros_marketplace_solana::instruction::SetListingQuote as Data_;
 
     let (listing_pda, _) = listing_state_pda(&asset_id, &seller_wallet);
     let (program_config, _) = program_config_pda();
@@ -178,7 +178,7 @@ pub fn set_listing_quote_ix(
     };
 
     Instruction {
-        program_id: eros_marketplace_sale::ID,
+        program_id: eros_marketplace_solana::ID,
         accounts: accounts.to_account_metas(None),
         data: data.data(),
     }
@@ -186,8 +186,8 @@ pub fn set_listing_quote_ix(
 
 /// Builds the `cancel_listing` instruction using Anchor's generated client types.
 pub fn cancel_listing_ix(seller: &Pubkey, listing_pda: Pubkey) -> Instruction {
-    use eros_marketplace_sale::accounts::CancelListing as Accounts_;
-    use eros_marketplace_sale::instruction::CancelListing as Data_;
+    use eros_marketplace_solana::accounts::CancelListing as Accounts_;
+    use eros_marketplace_solana::instruction::CancelListing as Data_;
 
     let accounts = Accounts_ {
         seller: *seller,
@@ -196,7 +196,7 @@ pub fn cancel_listing_ix(seller: &Pubkey, listing_pda: Pubkey) -> Instruction {
     let data = Data_ {};
 
     Instruction {
-        program_id: eros_marketplace_sale::ID,
+        program_id: eros_marketplace_solana::ID,
         accounts: accounts.to_account_metas(None),
         data: data.data(),
     }
@@ -208,8 +208,8 @@ pub fn housekeeping_clear_ix(
     asset_id: Pubkey,
     seller_wallet: Pubkey,
 ) -> Instruction {
-    use eros_marketplace_sale::accounts::HousekeepingClear as Accounts_;
-    use eros_marketplace_sale::instruction::HousekeepingClear as Data_;
+    use eros_marketplace_solana::accounts::HousekeepingClear as Accounts_;
+    use eros_marketplace_solana::instruction::HousekeepingClear as Data_;
 
     let (listing_pda, _) = listing_state_pda(&asset_id, &seller_wallet);
     let (program_config, _) = program_config_pda();
@@ -225,7 +225,7 @@ pub fn housekeeping_clear_ix(
     };
 
     Instruction {
-        program_id: eros_marketplace_sale::ID,
+        program_id: eros_marketplace_solana::ID,
         accounts: accounts.to_account_metas(None),
         data: data.data(),
     }
@@ -244,7 +244,7 @@ pub async fn send_tx(
 
 // ── Phase 5: execute_purchase helpers ───────────────────────────────────────
 
-use eros_marketplace_sale::SaleOrder;
+use eros_marketplace_solana::SaleOrder;
 
 /// Manually constructs an Ed25519Program instruction whose data layout matches
 /// what `verify_ed25519_precompile` parses:
@@ -342,7 +342,7 @@ pub fn ed25519_precompile_ix_with_indices(
 // accounts struct still needs to be populated. `BubblegumPlaceholders` provides
 // dummy values so existing tests can pass `BubblegumPlaceholders::default()`.
 
-use eros_marketplace_sale::seeds::SALE_AUTHORITY_SEED;
+use eros_marketplace_solana::seeds::SALE_AUTHORITY_SEED;
 
 /// Placeholder Bubblegum accounts for unit tests.
 ///
@@ -371,7 +371,7 @@ impl BubblegumPlaceholders {
     pub fn with_pda(asset_id: &Pubkey, seller: &Pubkey) -> Self {
         let (sale_authority, _) = Pubkey::find_program_address(
             &[SALE_AUTHORITY_SEED, asset_id.as_ref(), seller.as_ref()],
-            &eros_marketplace_sale::ID,
+            &eros_marketplace_solana::ID,
         );
         Self {
             sale_authority,
@@ -406,7 +406,7 @@ impl Default for BubblegumPlaceholders {
 pub fn sale_authority_pda(asset_id: &Pubkey, seller: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[SALE_AUTHORITY_SEED, asset_id.as_ref(), seller.as_ref()],
-        &eros_marketplace_sale::ID,
+        &eros_marketplace_solana::ID,
     )
 }
 
@@ -424,8 +424,8 @@ pub fn execute_purchase_ix(
     ed25519_ix_index: u8,
     bb: BubblegumPlaceholders,
 ) -> Instruction {
-    use eros_marketplace_sale::accounts::ExecutePurchase as Accounts_;
-    use eros_marketplace_sale::instruction::ExecutePurchase as Data_;
+    use eros_marketplace_solana::accounts::ExecutePurchase as Accounts_;
+    use eros_marketplace_solana::instruction::ExecutePurchase as Data_;
 
     let (royalty_pda, _) = royalty_registry_pda(&sale_order.asset_id);
     let (listing_pda, _) = listing_state_pda(&sale_order.asset_id, &sale_order.seller_wallet);
@@ -460,7 +460,7 @@ pub fn execute_purchase_ix(
     };
 
     let mut ix = Instruction {
-        program_id: eros_marketplace_sale::ID,
+        program_id: eros_marketplace_solana::ID,
         accounts: accounts.to_account_metas(None),
         data: data.data(),
     };

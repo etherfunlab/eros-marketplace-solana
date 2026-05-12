@@ -7,10 +7,10 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-eros_marketplace_sale = "Ca8tTnDxUcXd1FKDaCc1x8m8faEU6NB3jfLhDNvrZK8a"
+eros_marketplace_solana = "Ca8tTnDxUcXd1FKDaCc1x8m8faEU6NB3jfLhDNvrZK8a"
 
 [programs.devnet]
-eros_marketplace_sale = "Ca8tTnDxUcXd1FKDaCc1x8m8faEU6NB3jfLhDNvrZK8a"
+eros_marketplace_solana = "Ca8tTnDxUcXd1FKDaCc1x8m8faEU6NB3jfLhDNvrZK8a"
 
 [provider]
 cluster = "Localnet"

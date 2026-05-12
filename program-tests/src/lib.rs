@@ -1,4 +1,4 @@
-//! Rust-side integration tests for eros_marketplace_sale.
+//! Rust-side integration tests for eros_marketplace_solana.
 //! Each top-level test function is `#[tokio::test]` and uses solana-program-test
 //! to spin a lightweight in-process bank with our program loaded.
 
@@ -9,8 +9,8 @@ mod helpers;
 mod tests {
     use super::helpers::*;
     use ed25519_dalek::{Signer as DalekSigner, SigningKey};
-    use eros_marketplace_sale::state::{ManifestRegistry, RoyaltyRegistry};
-    use eros_marketplace_sale::SaleOrder;
+    use eros_marketplace_solana::state::{ManifestRegistry, RoyaltyRegistry};
+    use eros_marketplace_solana::SaleOrder;
     use solana_sdk::pubkey::Pubkey;
     use solana_sdk::signature::Keypair;
     use solana_sdk::signer::Signer;
@@ -111,7 +111,7 @@ mod tests {
         assert_eq!(m.spec_version, sv);
     }
 
-    use eros_marketplace_sale::state::ListingState;
+    use eros_marketplace_solana::state::ListingState;
 
     async fn read_listing(
         ctx: &mut solana_program_test::ProgramTestContext,
