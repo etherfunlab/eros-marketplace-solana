@@ -72,3 +72,29 @@ pub struct ListingState {
     pub last_seen_nonce: u64,      // monotonic; nonces MUST strictly increase
     pub bump: u8,
 }
+
+/// Per-collection registry: binds a Core collection to its `sale_authority`
+/// PDA (`seeds = [SALE_AUTHORITY_SEED, collection]`). Admin-initialized via
+/// `register_collection` before any asset in the collection can be sold.
+/// Storing `sale_authority_bump` here lets `execute_purchase` skip
+/// `find_program_address` (O(1) PDA validation via `bump = ...`).
+#[account]
+#[derive(InitSpace)]
+pub struct CollectionRegistry {
+    pub collection: Pubkey,
+    pub sale_authority_bump: u8,
+    pub bump: u8,
+    pub registered_at: i64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collection_registry_init_space_is_stable() {
+        // 32 (collection) + 1 (sale_authority_bump) + 1 (bump) + 8 (registered_at)
+        // = 42 bytes payload; the 8-byte discriminator is added by Anchor.
+        assert_eq!(CollectionRegistry::INIT_SPACE, 42);
+    }
+}
