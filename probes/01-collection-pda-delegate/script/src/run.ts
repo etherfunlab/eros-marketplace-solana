@@ -71,6 +71,24 @@ async function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// Retry helper for RPC reads that race with tx propagation across the
+// Helius load balancer (sendAndConfirm confirms on one node, next read can
+// hit a different node that hasn't replicated yet).
+async function retry<T>(fn: () => Promise<T>, label: string, tries = 8): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      const wait = 1500 * (i + 1);
+      console.log(`  ${label} attempt ${i + 1}/${tries} failed, retrying in ${wait}ms…`);
+      await sleep(wait);
+    }
+  }
+  throw lastErr;
+}
+
 async function main(): Promise<void> {
   await fs.mkdir(RESPONSES_DIR, { recursive: true });
 
@@ -114,8 +132,12 @@ async function main(): Promise<void> {
   console.log(`collection: ${collectionSigner.publicKey}`);
   console.log(`tx: ${Buffer.from(collectionTx.signature).toString('base64')}`);
 
-  const collectionAcct = await fetchCollection(umi, collectionSigner.publicKey);
+  const collectionAcct = await retry(
+    () => fetchCollection(umi, collectionSigner.publicKey),
+    'fetchCollection',
+  );
   await dumpJson('B-collection-account', collectionAcct);
+  console.log(`  plugins present: ${(collectionAcct as any).permanentTransferDelegate ? 'PermanentTransferDelegate ✓' : '(none seen)'}`);
 
   // ── PHASE C: create Bubblegum V2 tree ────────────────────────────────────
   console.log('\n== PHASE C: createTreeV2 ==');
@@ -134,21 +156,30 @@ async function main(): Promise<void> {
   console.log('\n== PHASE D: mintV2 into collection ==');
   const leafOwnerKp = generateSigner(umi);
   console.log(`leaf owner (initial): ${leafOwnerKp.publicKey}`);
-  const mintTx = await mintV2(umi, {
-    leafOwner: leafOwnerKp.publicKey,
-    merkleTree: merkleTree.publicKey,
-    coreCollection: collectionSigner.publicKey,
-    metadata: {
-      name: 'Probe01 Asset',
-      uri: 'https://example.invalid/probe01-asset.json',
-      sellerFeeBasisPoints: 0,
-      collection: some(collectionSigner.publicKey),
-      creators: [],
-    },
-  }).sendAndConfirm(umi);
+  // mintV2 can hit a stale RPC node that hasn't seen createTreeV2 yet —
+  // retry to outlast Helius's load balancer.
+  const mintTx = await retry(
+    () =>
+      mintV2(umi, {
+        leafOwner: leafOwnerKp.publicKey,
+        merkleTree: merkleTree.publicKey,
+        coreCollection: collectionSigner.publicKey,
+        metadata: {
+          name: 'Probe01 Asset',
+          uri: 'https://example.invalid/probe01-asset.json',
+          sellerFeeBasisPoints: 0,
+          collection: some(collectionSigner.publicKey),
+          creators: [],
+        },
+      }).sendAndConfirm(umi),
+    'mintV2',
+  );
   console.log(`mint tx: ${Buffer.from(mintTx.signature).toString('base64')}`);
 
-  const leaf = await parseLeafFromMintV2Transaction(umi, mintTx.signature);
+  const leaf = await retry(
+    () => parseLeafFromMintV2Transaction(umi, mintTx.signature),
+    'parseLeafFromMintV2Transaction',
+  );
   console.log(`leaf __kind=${leaf.__kind} id=${leaf.id} nonce=${leaf.nonce}`);
   await dumpJson('D-leaf', leaf);
 
@@ -163,22 +194,29 @@ async function main(): Promise<void> {
 
   // ── PHASE F: TransferV2 via permanent delegate ───────────────────────────
   console.log('\n== PHASE F: transferV2 via permanent delegate ==');
-  const assetWithProof = await getAssetWithProof(umi, leaf.id, { truncateCanopy: true });
+  const assetWithProof = await retry(
+    () => getAssetWithProof(umi, leaf.id, { truncateCanopy: true }),
+    'getAssetWithProof',
+  );
   console.log(`asset proof depth: ${assetWithProof.proof.length} nodes`);
 
-  const transferTx = await transferV2(umi, {
-    leafOwner: leafOwnerKp.publicKey,
-    newLeafOwner: newOwnerKp.publicKey,
-    merkleTree: merkleTree.publicKey,
-    coreCollection: collectionSigner.publicKey,
-    authority: delegateKp, // ← the test: permanent delegate (NOT leaf owner) signs
-    root: assetWithProof.root,
-    dataHash: assetWithProof.dataHash,
-    creatorHash: assetWithProof.creatorHash,
-    nonce: assetWithProof.nonce,
-    index: assetWithProof.index,
-    proof: assetWithProof.proof,
-  }).sendAndConfirm(umi);
+  const transferTx = await retry(
+    () =>
+      transferV2(umi, {
+        leafOwner: leafOwnerKp.publicKey,
+        newLeafOwner: newOwnerKp.publicKey,
+        merkleTree: merkleTree.publicKey,
+        coreCollection: collectionSigner.publicKey,
+        authority: delegateKp, // ← the test: permanent delegate (NOT leaf owner) signs
+        root: assetWithProof.root,
+        dataHash: assetWithProof.dataHash,
+        creatorHash: assetWithProof.creatorHash,
+        nonce: assetWithProof.nonce,
+        index: assetWithProof.index,
+        proof: assetWithProof.proof,
+      }).sendAndConfirm(umi),
+    'transferV2',
+  );
   console.log(`transfer tx: ${Buffer.from(transferTx.signature).toString('base64')}`);
 
   // ── PHASE G: confirm new owner via DAS ──────────────────────────────────
