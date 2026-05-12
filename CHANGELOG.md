@@ -1,6 +1,18 @@
 # Changelog
 
-## [0.2.0-preaudit] — TBD
+## [0.2.1-preaudit] — 2026-05-12
+
+⚠️ Still pre-audit.
+
+### Hotfix
+
+- **`execute_purchase` Bubblegum V2 CPI passed wrong `leaf_delegate`** (Codex review of v0.2.0-preaudit, P1 / would-fail-on-mainnet).
+  The handler was passing `leaf_delegate: Some(sale_authority.key())` because the v0.1.x docstring still claimed leaf_delegate was "informational" — in V2 it IS used to recompute the leaf hash for the Merkle proof, and v0.2 mint pipeline leaves the actual leaf delegate at its default (= leaf_owner = seller). The collection-permanent-delegate flow signs the CPI via the `authority` arg, not the `leaf_delegate` arg — these are two independent axes. Fix passes `leaf_delegate: Some(seller.key())` and the matching account_info, so the leaf hash recomputation matches the on-chain leaf and the proof verifies.
+- The `program-tests` suite didn't catch this because `test-without-bubblegum` gates out the entire CPI block (those tests verify SOL splits + nonce clearing, not Bubblegum behavior). The mainnet probe used umi's `transferV2` builder which defaults `leafDelegate` to `leaf_owner` (correct) — so the probe validated the *flow* end-to-end but never exercised our program's specific CPI args. Future fix: an integration test on a Bubblegum-enabled local validator (or mainnet probe v2 that drives `execute_purchase` directly).
+
+No on-chain state, account layout, or `SaleOrder` shape changes — strictly a CPI-args fix.
+
+## [0.2.0-preaudit] — 2026-05-12
 
 ⚠️ Still pre-audit. Do NOT deploy to mainnet without an external review of the
 collection-permanent-delegate flow. The probe at
