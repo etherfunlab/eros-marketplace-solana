@@ -1,5 +1,70 @@
 # Changelog
 
+## [0.2.0-preaudit] — TBD
+
+⚠️ Still pre-audit. Do NOT deploy to mainnet without an external review of the
+collection-permanent-delegate flow. The probe at
+`probes/01-collection-pda-delegate/` validates the design on devnet (with
+known gaps — see its README, particularly the Bubblegum V2 MintV2 status on
+devnet). A mainnet smoke probe is the gate before final ship.
+
+### Breaking changes (resolves Codex Critical #2)
+
+- **`SaleOrder` canonical bytes change**: added `collection: Pubkey` as the
+  second field (immediately after `asset_id`). Length 88 → 120 bytes.
+  Every seller signature from v0.1.x is invalidated. v0.1.1-preaudit was
+  never deployed to mainnet so no live signatures exist in the wild.
+- **`execute_purchase` accounts surface**: added
+  `collection_registry: Account<CollectionRegistry>` and
+  `core_collection: UncheckedAccount`. The `sale_authority` PDA seeds change
+  from `[SALE_AUTH, asset_id, seller_wallet]` to `[SALE_AUTH, collection]`,
+  with the bump sourced from `CollectionRegistry.sale_authority_bump` for
+  O(1) validation. The Bubblegum V2 `TransferV2` CPI now passes
+  `core_collection: Some(...)` instead of `None`.
+- **New instruction**: `register_collection(collection: Pubkey)` —
+  admin-gated, `init` (not idempotent). Must be called once per Core
+  collection before any asset in that collection can be sold via
+  `execute_purchase`. Captures the `sale_authority` bump into
+  `CollectionRegistry` at registration time.
+- **New on-chain account**: `CollectionRegistry { collection,
+  sale_authority_bump, bump, registered_at }` at seeds
+  `[b"collection", collection_pubkey]`.
+
+### New error variants
+
+- `CollectionNotRegistered`
+- `CollectionMismatch`
+- `CollectionRegistryMismatch`
+
+### Off-chain pipeline impact
+
+The svc collection-onboarding flow now goes:
+
+1. svc creates the Core collection via mpl-core `create_v2` with
+   `PermanentTransferDelegate.authority = derive_sale_authority(collection)`.
+2. svc calls `register_collection(collection)`.
+3. svc proceeds with the Bubblegum V2 mint pipeline
+   (`create_tree_config_v2`, `mint_v2` with `core_collection`).
+
+The `sale_authority` PDA is keyed by collection only, so it's deterministic
+from `program_id + collection_pubkey` without consulting any on-chain state.
+
+### Tests
+
+20 program-tests pass (16 carried over with collection threaded through,
+2 new for `register_collection`, 2 new for `execute_purchase` negative cases
+covering unregistered-collection and collection-account-mismatch). All under
+the `test-without-bubblegum` feature flag; full Bubblegum V2 integration
+exercised by `probes/01-collection-pda-delegate/` (devnet has a partial V2
+deployment as of 2026-05-12 — the probe README documents this and the
+mainnet validation gate).
+
+### Carried from v0.1.1
+
+- The pre-audit suffix stays until full audit (Soteria / Ottersec / Halborn).
+- All Codex Critical/High items #1, #3, #4, #5 remain fixed; #2 is now
+  resolved.
+
 ## [0.1.1-preaudit] — 2026-05-12
 
 ⚠️ Still pre-audit. Do NOT deploy to mainnet. The remaining Critical from
