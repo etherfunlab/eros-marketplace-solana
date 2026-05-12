@@ -1,7 +1,9 @@
 //! Shared test utilities for eros_marketplace_sale program tests.
 
 use anchor_lang::{InstructionData, ToAccountMetas};
-use eros_marketplace_sale::seeds::{MANIFEST_REGISTRY_SEED, ROYALTY_REGISTRY_SEED};
+use eros_marketplace_sale::seeds::{
+    MANIFEST_REGISTRY_SEED, PROGRAM_CONFIG_SEED, ROYALTY_REGISTRY_SEED,
+};
 use solana_program_test::{ProgramTest, ProgramTestContext};
 use solana_sdk::{
     instruction::Instruction,
@@ -41,6 +43,38 @@ pub async fn fresh_ctx() -> ProgramTestContext {
     pt.start_with_context().await
 }
 
+/// Derives the singleton `ProgramConfig` PDA.
+pub fn program_config_pda() -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[PROGRAM_CONFIG_SEED], &eros_marketplace_sale::ID)
+}
+
+/// Builds the `initialize` ix. `admin` is captured into the ProgramConfig PDA
+/// and gates all subsequent privileged instructions.
+pub fn initialize_ix(payer: &Pubkey, admin: &Pubkey) -> Instruction {
+    use eros_marketplace_sale::accounts::Initialize as Accounts_;
+    use eros_marketplace_sale::instruction::Initialize as Data_;
+
+    let (program_config, _) = program_config_pda();
+    let accounts = Accounts_ {
+        payer: *payer,
+        admin: *admin,
+        program_config,
+        system_program: anchor_lang::solana_program::system_program::ID,
+    };
+    Instruction {
+        program_id: eros_marketplace_sale::ID,
+        accounts: accounts.to_account_metas(None),
+        data: Data_ {}.data(),
+    }
+}
+
+/// Convenience: send `initialize` so the ProgramConfig PDA exists with
+/// `payer` as both rent-payer and admin. Returns nothing on success.
+pub async fn bootstrap_config(ctx: &mut ProgramTestContext, payer: &Keypair) {
+    let ix = initialize_ix(&payer.pubkey(), &payer.pubkey());
+    send_tx(ctx, payer, &[ix]).await.expect("bootstrap_config");
+}
+
 /// Derives the `RoyaltyRegistry` PDA for a given `asset_id`.
 pub fn royalty_registry_pda(asset_id: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(
@@ -61,6 +95,7 @@ pub fn manifest_registry_pda(asset_id: &Pubkey) -> (Pubkey, u8) {
 #[allow(clippy::too_many_arguments)]
 pub fn init_registries_ix(
     payer: &Pubkey,
+    admin: &Pubkey,
     asset_id: Pubkey,
     royalty_recipient: Pubkey,
     royalty_bps: u16,
@@ -76,9 +111,12 @@ pub fn init_registries_ix(
 
     let (royalty_pda, _) = royalty_registry_pda(&asset_id);
     let (manifest_pda, _) = manifest_registry_pda(&asset_id);
+    let (program_config, _) = program_config_pda();
 
     let accounts = InitRegistriesAccounts {
         payer: *payer,
+        admin: *admin,
+        program_config,
         royalty_registry: royalty_pda,
         manifest_registry: manifest_pda,
         system_program: anchor_lang::solana_program::system_program::ID,
@@ -115,6 +153,7 @@ pub fn listing_state_pda(asset_id: &Pubkey, seller: &Pubkey) -> (Pubkey, u8) {
 /// Builds the `set_listing_quote` instruction using Anchor's generated client types.
 pub fn set_listing_quote_ix(
     payer: &Pubkey,
+    admin: &Pubkey,
     asset_id: Pubkey,
     seller_wallet: Pubkey,
     listing_nonce: u64,
@@ -123,9 +162,12 @@ pub fn set_listing_quote_ix(
     use eros_marketplace_sale::instruction::SetListingQuote as Data_;
 
     let (listing_pda, _) = listing_state_pda(&asset_id, &seller_wallet);
+    let (program_config, _) = program_config_pda();
 
     let accounts = Accounts_ {
         payer: *payer,
+        admin: *admin,
+        program_config,
         listing_state: listing_pda,
         system_program: anchor_lang::solana_program::system_program::ID,
     };
@@ -170,9 +212,11 @@ pub fn housekeeping_clear_ix(
     use eros_marketplace_sale::instruction::HousekeepingClear as Data_;
 
     let (listing_pda, _) = listing_state_pda(&asset_id, &seller_wallet);
+    let (program_config, _) = program_config_pda();
 
     let accounts = Accounts_ {
         admin: *admin,
+        program_config,
         listing_state: listing_pda,
     };
     let data = Data_ {

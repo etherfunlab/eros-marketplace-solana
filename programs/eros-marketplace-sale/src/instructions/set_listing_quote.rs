@@ -1,8 +1,8 @@
 use anchor_lang::prelude::*;
 
 use crate::error::SaleError;
-use crate::seeds::LISTING_STATE_SEED;
-use crate::state::ListingState;
+use crate::seeds::{LISTING_STATE_SEED, PROGRAM_CONFIG_SEED};
+use crate::state::{ListingState, ProgramConfig};
 
 #[derive(Accounts)]
 #[instruction(asset_id: Pubkey, seller_wallet: Pubkey, listing_nonce: u64)]
@@ -13,6 +13,18 @@ pub struct SetListingQuote<'info> {
     /// time, not here.
     #[account(mut)]
     pub payer: Signer<'info>,
+
+    /// Authorized admin. Required so an attacker cannot advance any seller's
+    /// listing nonce to a high value (DoS) or activate a known signed order
+    /// nonce — the bug fixed here.
+    pub admin: Signer<'info>,
+
+    #[account(
+        seeds = [PROGRAM_CONFIG_SEED],
+        bump = program_config.bump,
+        has_one = admin @ SaleError::NotAdmin,
+    )]
+    pub program_config: Account<'info, ProgramConfig>,
 
     #[account(
         init_if_needed,

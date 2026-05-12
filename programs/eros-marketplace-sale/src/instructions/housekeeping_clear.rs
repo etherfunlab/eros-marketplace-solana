@@ -1,22 +1,20 @@
 use anchor_lang::prelude::*;
 
 use crate::error::SaleError;
-use crate::seeds::LISTING_STATE_SEED;
-use crate::state::ListingState;
-
-// Read from build env so tests can override:
-//   ADMIN_WALLET="<base58 pubkey>" anchor build
-// In production, set this in CI before the prod build.
-pub fn admin_wallet() -> Pubkey {
-    let s = option_env!("ADMIN_WALLET")
-        .unwrap_or("11111111111111111111111111111111"); // System program == "no admin set"
-    s.parse().expect("ADMIN_WALLET env must be a valid base58 pubkey")
-}
+use crate::seeds::{LISTING_STATE_SEED, PROGRAM_CONFIG_SEED};
+use crate::state::{ListingState, ProgramConfig};
 
 #[derive(Accounts)]
 #[instruction(asset_id: Pubkey, seller_wallet: Pubkey)]
 pub struct HousekeepingClear<'info> {
     pub admin: Signer<'info>,
+
+    #[account(
+        seeds = [PROGRAM_CONFIG_SEED],
+        bump = program_config.bump,
+        has_one = admin @ SaleError::NotAdmin,
+    )]
+    pub program_config: Account<'info, ProgramConfig>,
 
     #[account(
         mut,
@@ -31,7 +29,6 @@ pub fn handler(
     _asset_id: Pubkey,
     _seller_wallet: Pubkey,
 ) -> Result<()> {
-    require_keys_eq!(ctx.accounts.admin.key(), admin_wallet(), SaleError::NotAdmin);
     let s = &mut ctx.accounts.listing_state;
     s.active_nonce = None;
     Ok(())

@@ -60,9 +60,11 @@ mod tests {
     async fn init_registries_happy_path() {
         let mut ctx = fresh_ctx().await;
         let payer = ctx.payer.insecure_clone();
+        bootstrap_config(&mut ctx, &payer).await;
         let (asset_id, rr, rb, pf, pb, mu, ms, pi, sv) = sample_init_args();
 
         let ix = init_registries_ix(
+            &payer.pubkey(),
             &payer.pubkey(),
             asset_id,
             rr,
@@ -128,10 +130,11 @@ mod tests {
     async fn set_listing_quote_first_call_initializes() {
         let mut ctx = fresh_ctx().await;
         let payer = ctx.payer.insecure_clone();
+        bootstrap_config(&mut ctx, &payer).await;
         let asset_id = Pubkey::new_unique();
         let seller = Pubkey::new_unique();
 
-        let ix = set_listing_quote_ix(&payer.pubkey(), asset_id, seller, 1);
+        let ix = set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller, 1);
         send_tx(&mut ctx, &payer, &[ix]).await.expect("first listing ok");
 
         let (pda, _) = listing_state_pda(&asset_id, &seller);
@@ -146,13 +149,14 @@ mod tests {
     async fn set_listing_quote_relisting_advances_nonce() {
         let mut ctx = fresh_ctx().await;
         let payer = ctx.payer.insecure_clone();
+        bootstrap_config(&mut ctx, &payer).await;
         let asset_id = Pubkey::new_unique();
         let seller = Pubkey::new_unique();
 
         send_tx(
             &mut ctx,
             &payer,
-            &[set_listing_quote_ix(&payer.pubkey(), asset_id, seller, 1)],
+            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller, 1)],
         )
         .await
         .unwrap();
@@ -161,7 +165,7 @@ mod tests {
         send_tx(
             &mut ctx,
             &payer,
-            &[set_listing_quote_ix(&payer.pubkey(), asset_id, seller, 5)],
+            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller, 5)],
         )
         .await
         .unwrap();
@@ -176,13 +180,14 @@ mod tests {
     async fn set_listing_quote_rejects_non_monotonic_nonce() {
         let mut ctx = fresh_ctx().await;
         let payer = ctx.payer.insecure_clone();
+        bootstrap_config(&mut ctx, &payer).await;
         let asset_id = Pubkey::new_unique();
         let seller = Pubkey::new_unique();
 
         send_tx(
             &mut ctx,
             &payer,
-            &[set_listing_quote_ix(&payer.pubkey(), asset_id, seller, 5)],
+            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller, 5)],
         )
         .await
         .unwrap();
@@ -193,7 +198,7 @@ mod tests {
         let result = send_tx(
             &mut ctx,
             &payer,
-            &[set_listing_quote_ix(&payer.pubkey(), asset_id, seller, 5)],
+            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller, 5)],
         )
         .await;
         assert!(result.is_err(), "equal nonce must fail");
@@ -204,7 +209,7 @@ mod tests {
         let result = send_tx(
             &mut ctx,
             &payer,
-            &[set_listing_quote_ix(&payer.pubkey(), asset_id, seller, 3)],
+            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller, 3)],
         )
         .await;
         assert!(result.is_err(), "lower nonce must fail");
@@ -215,10 +220,12 @@ mod tests {
     async fn init_registries_double_init_fails() {
         let mut ctx = fresh_ctx().await;
         let payer = ctx.payer.insecure_clone();
+        bootstrap_config(&mut ctx, &payer).await;
         let (asset_id, rr, rb, pf, pb, mu, ms, pi, sv) = sample_init_args();
 
         // First init: must succeed
         let ix = init_registries_ix(
+            &payer.pubkey(),
             &payer.pubkey(),
             asset_id,
             rr,
@@ -249,6 +256,7 @@ mod tests {
     async fn cancel_listing_clears_active_nonce() {
         let mut ctx = fresh_ctx().await;
         let payer = ctx.payer.insecure_clone();
+        bootstrap_config(&mut ctx, &payer).await;
         let seller = solana_sdk::signature::Keypair::new();
         let asset_id = Pubkey::new_unique();
 
@@ -266,7 +274,7 @@ mod tests {
         send_tx(
             &mut ctx,
             &payer,
-            &[set_listing_quote_ix(&payer.pubkey(), asset_id, seller.pubkey(), 7)],
+            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller.pubkey(), 7)],
         )
         .await
         .unwrap();
@@ -296,6 +304,7 @@ mod tests {
     async fn cancel_listing_rejects_non_seller() {
         let mut ctx = fresh_ctx().await;
         let payer = ctx.payer.insecure_clone();
+        bootstrap_config(&mut ctx, &payer).await;
         let seller = solana_sdk::signature::Keypair::new();
         let imposter = solana_sdk::signature::Keypair::new();
         let asset_id = Pubkey::new_unique();
@@ -314,7 +323,7 @@ mod tests {
         send_tx(
             &mut ctx,
             &payer,
-            &[set_listing_quote_ix(&payer.pubkey(), asset_id, seller.pubkey(), 1)],
+            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller.pubkey(), 1)],
         )
         .await
         .unwrap();
@@ -340,6 +349,7 @@ mod tests {
     async fn execute_purchase_happy_path_no_bubblegum() {
         let mut ctx = fresh_ctx().await;
         let payer = ctx.payer.insecure_clone();
+        bootstrap_config(&mut ctx, &payer).await;
 
         // Seller is an ed25519 keypair whose verifying key bytes ARE the Solana pubkey.
         let seller_sk = SigningKey::generate(&mut rand::rngs::OsRng);
@@ -370,6 +380,7 @@ mod tests {
         let asset_id = Pubkey::new_unique();
         let init_ix = init_registries_ix(
             &payer.pubkey(),
+            &payer.pubkey(),
             asset_id,
             royalty_recipient.pubkey(),
             250,
@@ -387,7 +398,7 @@ mod tests {
         send_tx(
             &mut ctx,
             &payer,
-            &[set_listing_quote_ix(&payer.pubkey(), asset_id, seller_pubkey, 1)],
+            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller_pubkey, 1)],
         )
         .await
         .unwrap();
@@ -476,6 +487,7 @@ mod tests {
     ) {
         let mut ctx = fresh_ctx().await;
         let payer = ctx.payer.insecure_clone();
+        bootstrap_config(&mut ctx, &payer).await;
 
         let seller_sk = SigningKey::generate(&mut rand::rngs::OsRng);
         let seller_pubkey = Pubkey::new_from_array(seller_sk.verifying_key().to_bytes());
@@ -504,6 +516,7 @@ mod tests {
             &payer,
             &[init_registries_ix(
                 &payer.pubkey(),
+                &payer.pubkey(),
                 asset_id,
                 r_recv.pubkey(),
                 250,
@@ -522,7 +535,7 @@ mod tests {
         send_tx(
             &mut ctx,
             &payer,
-            &[set_listing_quote_ix(&payer.pubkey(), asset_id, seller_pubkey, 1)],
+            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller_pubkey, 1)],
         )
         .await
         .unwrap();
@@ -666,6 +679,100 @@ mod tests {
     // Also verify the real_seller_sk variable is used (suppress unused warning)
     #[allow(dead_code)]
     fn _uses_real_seller_sk(_: SigningKey) {}
+
+    /// Admin gate: bootstrap captures payer-as-admin, but init_registries is
+    /// signed by a different keypair claiming to be admin. Must fail with
+    /// NotAdmin (has_one constraint on ProgramConfig.admin).
+    #[tokio::test]
+    async fn init_registries_rejects_wrong_admin() {
+        let mut ctx = fresh_ctx().await;
+        let payer = ctx.payer.insecure_clone();
+        bootstrap_config(&mut ctx, &payer).await;
+
+        let imposter = Keypair::new();
+        send_tx(
+            &mut ctx,
+            &payer,
+            &[anchor_lang::solana_program::system_instruction::transfer(
+                &payer.pubkey(),
+                &imposter.pubkey(),
+                10_000_000_000,
+            )],
+        )
+        .await
+        .unwrap();
+        ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+
+        let (asset_id, rr, rb, pf, pb, mu, ms, pi, sv) = sample_init_args();
+        let ix = init_registries_ix(
+            &imposter.pubkey(),
+            &imposter.pubkey(),
+            asset_id,
+            rr,
+            rb,
+            pf,
+            pb,
+            mu,
+            ms,
+            pi,
+            sv,
+        );
+        let recent = ctx.last_blockhash;
+        let tx = Transaction::new_signed_with_payer(
+            &[ix],
+            Some(&imposter.pubkey()),
+            &[&imposter],
+            recent,
+        );
+        let result = ctx.banks_client.process_transaction(tx).await;
+        assert!(
+            result.is_err(),
+            "init_registries must reject signer that doesn't match ProgramConfig.admin"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_listing_quote_rejects_wrong_admin() {
+        let mut ctx = fresh_ctx().await;
+        let payer = ctx.payer.insecure_clone();
+        bootstrap_config(&mut ctx, &payer).await;
+
+        let imposter = Keypair::new();
+        send_tx(
+            &mut ctx,
+            &payer,
+            &[anchor_lang::solana_program::system_instruction::transfer(
+                &payer.pubkey(),
+                &imposter.pubkey(),
+                10_000_000_000,
+            )],
+        )
+        .await
+        .unwrap();
+        ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+
+        let asset_id = Pubkey::new_unique();
+        let seller = Pubkey::new_unique();
+        let ix = set_listing_quote_ix(
+            &imposter.pubkey(),
+            &imposter.pubkey(),
+            asset_id,
+            seller,
+            1,
+        );
+        let recent = ctx.last_blockhash;
+        let tx = Transaction::new_signed_with_payer(
+            &[ix],
+            Some(&imposter.pubkey()),
+            &[&imposter],
+            recent,
+        );
+        let result = ctx.banks_client.process_transaction(tx).await;
+        assert!(
+            result.is_err(),
+            "set_listing_quote must reject signer that doesn't match ProgramConfig.admin"
+        );
+    }
 
     /// Cross-instruction signature-bypass attack: the Ed25519 instruction is
     /// well-formed and the seller-signed pubkey + message both live inside it,

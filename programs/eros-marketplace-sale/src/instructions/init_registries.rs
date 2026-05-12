@@ -1,8 +1,8 @@
 use anchor_lang::prelude::*;
 
 use crate::error::SaleError;
-use crate::seeds::{MANIFEST_REGISTRY_SEED, ROYALTY_REGISTRY_SEED};
-use crate::state::{ManifestRegistry, RoyaltyRegistry};
+use crate::seeds::{MANIFEST_REGISTRY_SEED, PROGRAM_CONFIG_SEED, ROYALTY_REGISTRY_SEED};
+use crate::state::{ManifestRegistry, ProgramConfig, RoyaltyRegistry};
 
 #[derive(Accounts)]
 #[instruction(asset_id: Pubkey)]
@@ -11,6 +11,20 @@ pub struct InitRegistries<'info> {
     /// service wallet at mint time.
     #[account(mut)]
     pub payer: Signer<'info>,
+
+    /// Authorized admin. Required to prevent a front-runner from poisoning
+    /// the immutable registries with hostile royalty/manifest data — the bug
+    /// fixed here.
+    pub admin: Signer<'info>,
+
+    /// Program-wide config. `has_one = admin` enforces that the signer above
+    /// matches the admin captured at `initialize` time.
+    #[account(
+        seeds = [PROGRAM_CONFIG_SEED],
+        bump = program_config.bump,
+        has_one = admin @ SaleError::NotAdmin,
+    )]
+    pub program_config: Account<'info, ProgramConfig>,
 
     /// Immutable royalty + platform fee registry. `init` (not `init_if_needed`)
     /// — re-init must fail.

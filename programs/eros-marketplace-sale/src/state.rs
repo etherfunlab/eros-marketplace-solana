@@ -33,6 +33,16 @@ pub struct ManifestRegistry {
     pub bump: u8,
 }
 
+/// Singleton program-wide config. Initialized once via `initialize`; stores
+/// the admin pubkey that gates registry creation, listing-quote management,
+/// and housekeeping. Immutable in v0.1.x — admin rotation comes in v0.2.
+#[account]
+#[derive(InitSpace)]
+pub struct ProgramConfig {
+    pub admin: Pubkey,
+    pub bump: u8,
+}
+
 /// Mutable per-(asset, seller) listing state. Tracks the active signed quote
 /// nonce and a monotonic high-water mark to prevent nonce reuse.
 #[account]
