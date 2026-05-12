@@ -49,14 +49,26 @@ This is not specific to our setup — it's a global devnet program state issue. 
 - (b) MintV2 requires an additional setup step we (and everyone else) are missing, OR
 - (c) Devnet runs an outdated build that predates working MintV2.
 
+### Cluster matrix (follow-up scan)
+
+After devnet failed, scanned `BGUMAp9` on the other two Solana clusters:
+
+| Cluster | Bubblegum V2 status | Evidence (30 latest OK txs sampled) |
+|---|---|---|
+| **Mainnet** | ✅ **fully alive** | `MintV2;UpdateCollectionInfoV1;Append` ×4, `TransferV2;ReplaceLeaf` ×12. Collection-bound V2 mint + V2 transfer both exercised every day |
+| **Devnet** | ⚠️ partial (this probe) | `CreateTreeV2` works, `MintV2` fails universally — see above |
+| **Testnet** | ❌ V2 not deployed | All 30 txs `MintV1;Append` — testnet runs older binary than devnet |
+
+**Implication**: **mainnet is the only viable cluster for end-to-end v0.2 validation.** Re-running this probe on mainnet should succeed.
+
 ### Workaround options
 
-| Option | Effort | Trade-off |
-|---|---|---|
-| **Wait for devnet program upgrade** | low (just monitor) | Indefinite delay; v0.2 plan can still be written in parallel |
-| **Run localnet w/ mpl-bubblegum master build** | medium | Requires building the program from source + loading it into local validator alongside mpl-core, mpl-account-compression, and SPL Noop |
-| **Test on mainnet** | high cost | ~0.5 SOL per attempt; PermanentTransferDelegate is irrevocable so failures brick the collection forever (see brainstorm §7 mainnet discussion) |
-| **Accept analytical validation** | none | Q1 confirmed empirically; Q2-Q4 follow from architectural reasoning (see "Architecture decision" above). Proceed with v0.2 plan now, validate end-to-end when devnet unblocks. **Recommended.** |
+| Option | Effort | Trade-off | Status |
+|---|---|---|---|
+| **Re-run probe on mainnet** | ~0.5 SOL | PermanentTransferDelegate is irrevocable — bad delegate = bricked collection. We control keypair so a throwaway "probe" collection is acceptable | **Selected** for v0.2 plan validation gate |
+| Wait for devnet program upgrade | low | Indefinite delay; v0.2 plan can still be written in parallel | superseded once mainnet path is taken |
+| Run localnet w/ mpl-bubblegum master build | medium | Requires building program from source + loading into local validator alongside mpl-core, mpl-account-compression, SPL Noop | fallback if mainnet probe surfaces issues |
+| Accept analytical validation only | none | Q1 confirmed empirically; Q2-Q4 follow from architectural reasoning | superseded once mainnet path is taken |
 
 ## What we ran
 
