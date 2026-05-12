@@ -363,13 +363,10 @@ pub struct BubblegumPlaceholders {
 }
 
 impl BubblegumPlaceholders {
-    /// Derive the real sale_authority PDA for a given (asset_id, seller) pair.
+    /// Derive the real sale_authority PDA for a given collection (v0.2).
     /// Use this when you want the PDA to match what the program derives on-chain.
-    pub fn with_pda(asset_id: &Pubkey, seller: &Pubkey) -> Self {
-        let (sale_authority, _) = Pubkey::find_program_address(
-            &[SALE_AUTHORITY_SEED, asset_id.as_ref(), seller.as_ref()],
-            &eros_marketplace_solana::ID,
-        );
+    pub fn with_pda(collection: &Pubkey) -> Self {
+        let (sale_authority, _) = sale_authority_pda(collection);
         Self {
             sale_authority,
             ..Self::default()
@@ -399,10 +396,10 @@ impl Default for BubblegumPlaceholders {
     }
 }
 
-/// Derives the `sale_authority` PDA for a given `(asset_id, seller)` pair.
-pub fn sale_authority_pda(asset_id: &Pubkey, seller: &Pubkey) -> (Pubkey, u8) {
+/// Derives the `sale_authority` PDA for a given collection (v0.2: collection-keyed).
+pub fn sale_authority_pda(collection: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(
-        &[SALE_AUTHORITY_SEED, asset_id.as_ref(), seller.as_ref()],
+        &[SALE_AUTHORITY_SEED, collection.as_ref()],
         &eros_marketplace_solana::ID,
     )
 }
@@ -427,9 +424,6 @@ pub fn execute_purchase_ix(
     let (royalty_pda, _) = royalty_registry_pda(&sale_order.asset_id);
     let (listing_pda, _) = listing_state_pda(&sale_order.asset_id, &sale_order.seller_wallet);
 
-    // Derive the real sale_authority PDA so it satisfies the seeds constraint.
-    let (sale_authority, _) = sale_authority_pda(&sale_order.asset_id, seller);
-
     let accounts = Accounts_ {
         buyer: *buyer,
         seller: *seller,
@@ -437,9 +431,11 @@ pub fn execute_purchase_ix(
         platform_fee_recipient: *platform_fee_recipient,
         royalty_registry: royalty_pda,
         listing_state: listing_pda,
+        collection_registry: collection_registry_pda(&sale_order.collection).0,
+        core_collection: sale_order.collection,
         instructions_sysvar: solana_sdk_ids::sysvar::instructions::ID,
         system_program: anchor_lang::solana_program::system_program::ID,
-        sale_authority,
+        sale_authority: sale_authority_pda(&sale_order.collection).0,
         tree_config: bb.tree_config,
         merkle_tree: bb.merkle_tree,
         log_wrapper: bb.log_wrapper,
@@ -472,4 +468,57 @@ pub fn execute_purchase_ix(
     }
 
     ix
+}
+
+/// Derives the `CollectionRegistry` PDA for a given collection pubkey.
+pub fn collection_registry_pda(collection: &Pubkey) -> (Pubkey, u8) {
+    use eros_marketplace_solana::seeds::COLLECTION_REGISTRY_SEED;
+    Pubkey::find_program_address(
+        &[COLLECTION_REGISTRY_SEED, collection.as_ref()],
+        &eros_marketplace_solana::ID,
+    )
+}
+
+/// Builds the `register_collection` instruction.
+pub fn register_collection_ix(payer: &Pubkey, admin: &Pubkey, collection: Pubkey) -> Instruction {
+    use eros_marketplace_solana::accounts::RegisterCollection as Accounts_;
+    use eros_marketplace_solana::instruction::RegisterCollection as Data_;
+
+    let (program_config, _) = program_config_pda();
+    let (collection_registry, _) = collection_registry_pda(&collection);
+    let accounts = Accounts_ {
+        payer: *payer,
+        admin: *admin,
+        program_config,
+        collection_registry,
+        system_program: anchor_lang::solana_program::system_program::ID,
+    };
+    Instruction {
+        program_id: eros_marketplace_solana::ID,
+        accounts: accounts.to_account_metas(None),
+        data: Data_ { collection }.data(),
+    }
+}
+
+/// Convenience: register a collection so subsequent execute_purchase tests work.
+pub async fn bootstrap_collection(
+    ctx: &mut ProgramTestContext,
+    payer: &Keypair,
+    collection: Pubkey,
+) {
+    let ix = register_collection_ix(&payer.pubkey(), &payer.pubkey(), collection);
+    send_tx(ctx, payer, &[ix])
+        .await
+        .expect("bootstrap_collection");
+}
+
+/// Fund a wallet with SOL via system transfer from the test bank's payer.
+pub async fn fund(ctx: &mut ProgramTestContext, recipient: &Pubkey, lamports: u64) {
+    let payer = ctx.payer.insecure_clone();
+    let ix = anchor_lang::solana_program::system_instruction::transfer(
+        &payer.pubkey(),
+        recipient,
+        lamports,
+    );
+    send_tx(ctx, &payer, &[ix]).await.expect("fund");
 }

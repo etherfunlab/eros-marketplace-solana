@@ -4,8 +4,10 @@ use solana_sdk_ids::sysvar::instructions::ID as INSTRUCTIONS_SYSVAR_ID;
 use crate::ed25519::verify_ed25519_precompile;
 use crate::error::SaleError;
 use crate::sale_order::SaleOrder;
-use crate::seeds::{LISTING_STATE_SEED, ROYALTY_REGISTRY_SEED, SALE_AUTHORITY_SEED};
-use crate::state::{ListingState, Purchase, RoyaltyRegistry};
+use crate::seeds::{
+    COLLECTION_REGISTRY_SEED, LISTING_STATE_SEED, ROYALTY_REGISTRY_SEED, SALE_AUTHORITY_SEED,
+};
+use crate::state::{CollectionRegistry, ListingState, Purchase, RoyaltyRegistry};
 
 // ── mpl-bubblegum 3.0 CPI surface — TransferV2 ───────────────────────────────
 //
@@ -41,8 +43,8 @@ use crate::state::{ListingState, Purchase, RoyaltyRegistry};
 // Merkle proof path nodes are appended as remaining_accounts on the instruction
 // (read-only, non-signer AccountMeta entries), in order from leaf to root.
 //
-// PDA seeds for sale_authority:
-//   [SALE_AUTHORITY_SEED, asset_id.as_ref(), seller_wallet.as_ref(), &[bump]]
+// PDA seeds for sale_authority (v0.2: collection-keyed):
+//   [SALE_AUTHORITY_SEED, collection.as_ref(), &[bump]]
 // ────────────────────────────────────────────────────────────────────────────
 
 // Imports needed only when the Bubblegum CPI is compiled in.
@@ -92,6 +94,23 @@ pub struct ExecutePurchase<'info> {
     )]
     pub listing_state: Account<'info, ListingState>,
 
+    /// Registry binding (collection ↔ sale_authority PDA). Existence proves
+    /// admin registered this collection. Seeds bind directly to
+    /// `sale_order.collection`, so a buyer cannot pass an unrelated registry.
+    #[account(
+        seeds = [COLLECTION_REGISTRY_SEED, sale_order.collection.as_ref()],
+        bump = collection_registry.bump,
+        constraint = collection_registry.collection == sale_order.collection
+            @ SaleError::CollectionRegistryMismatch,
+    )]
+    pub collection_registry: Account<'info, CollectionRegistry>,
+
+    /// CHECK: must match `sale_order.collection`. Passed through to Bubblegum
+    /// V2 `TransferV2` CPI as the asset's Core collection; Bubblegum verifies
+    /// the cNFT actually belongs to this collection via its V2 collection_hash.
+    #[account(address = sale_order.collection @ SaleError::CollectionMismatch)]
+    pub core_collection: UncheckedAccount<'info>,
+
     /// Sysvar for Ed25519Program instruction introspection.
     /// CHECK: address is constrained to the well-known instructions sysvar ID.
     #[account(address = INSTRUCTIONS_SYSVAR_ID)]
@@ -101,20 +120,16 @@ pub struct ExecutePurchase<'info> {
 
     // ── Bubblegum transfer accounts (Phase 6) ──────────────────────────────
     //
-    // The program PDA `sale_authority` acts as the leaf delegate that the seller
-    // delegated to off-chain via a Bubblegum `delegate` ix. The PDA is unique per
-    // (asset_id, seller_wallet) so different listings never share authority.
-    /// Program PDA acting as Bubblegum leaf delegate.
-    /// Seeds: [SALE_AUTHORITY_SEED, asset_id, seller_wallet]
-    /// CHECK: This is a program-owned PDA. Its derivation is validated by Anchor's
-    ///        `seeds` constraint. Bubblegum verifies the current delegate matches.
+    // The program PDA `sale_authority` acts as the Core collection's
+    // PermanentTransferDelegate (v0.2). The PDA is keyed by collection so all
+    // assets in a collection share one authority PDA.
+    /// Program PDA acting as the Core collection's `PermanentTransferDelegate`.
+    /// Seeds: `[SALE_AUTHORITY_SEED, collection]` — keyed by collection only.
+    /// CHECK: Anchor `seeds` constraint validates derivation; the bump comes
+    /// from `collection_registry.sale_authority_bump` (cheaper than re-derive).
     #[account(
-        seeds = [
-            SALE_AUTHORITY_SEED,
-            sale_order.asset_id.as_ref(),
-            sale_order.seller_wallet.as_ref(),
-        ],
-        bump,
+        seeds = [SALE_AUTHORITY_SEED, sale_order.collection.as_ref()],
+        bump = collection_registry.sale_authority_bump,
     )]
     pub sale_authority: UncheckedAccount<'info>,
 
@@ -273,17 +288,12 @@ pub fn handler<'info>(
     //   new_leaf_owner = buyer
     #[cfg(not(feature = "test-without-bubblegum"))]
     {
-        // Derive the bump for sale_authority PDA so we can sign as the authority.
-        let sale_auth_bump = ctx.bumps.sale_authority;
-        let asset_id_bytes = sale_order.asset_id.to_bytes();
-        let seller_bytes = sale_order.seller_wallet.to_bytes();
+        // v0.2: sale_authority PDA is keyed by collection, not by (asset, seller).
+        // The bump was captured into CollectionRegistry at register_collection time.
+        let sale_auth_bump = ctx.accounts.collection_registry.sale_authority_bump;
+        let collection_bytes = sale_order.collection.to_bytes();
         let bump_slice = [sale_auth_bump];
-        let signer_seeds: &[&[u8]] = &[
-            SALE_AUTHORITY_SEED,
-            &asset_id_bytes,
-            &seller_bytes,
-            &bump_slice,
-        ];
+        let signer_seeds: &[&[u8]] = &[SALE_AUTHORITY_SEED, &collection_bytes, &bump_slice];
 
         // Build the Bubblegum TransferV2 instruction using the Pubkey-based struct.
         let proof_metas: Vec<AccountMeta> = ctx
@@ -304,8 +314,7 @@ pub fn handler<'info>(
             leaf_delegate: Some(ctx.accounts.sale_authority.key()),
             new_leaf_owner: ctx.accounts.buyer.key(),
             merkle_tree: ctx.accounts.merkle_tree.key(),
-            // core_collection: None unless the cNFT has a Core collection.
-            core_collection: None,
+            core_collection: Some(ctx.accounts.core_collection.key()),
             log_wrapper: ctx.accounts.log_wrapper.key(),
             compression_program: ctx.accounts.compression_program.key(),
             system_program: ctx.accounts.system_program.key(),
@@ -327,12 +336,8 @@ pub fn handler<'info>(
 
         // Collect account_infos in the same order as the TransferV2 instruction accounts:
         // [tree_config, payer, authority(opt), leaf_owner, leaf_delegate(opt),
-        //  new_leaf_owner, merkle_tree, core_collection(opt), log_wrapper,
+        //  new_leaf_owner, merkle_tree, core_collection, log_wrapper,
         //  compression_program, system_program, ...proof]
-        //
-        // When optional accounts are None, the kinobi-generated code substitutes
-        // the Bubblegum program ID as a placeholder. We must replicate that here
-        // for the AccountInfo slice.
         let mut account_infos = vec![
             ctx.accounts.bubblegum_program.to_account_info(), // program itself
             ctx.accounts.tree_config.to_account_info(),
@@ -342,8 +347,7 @@ pub fn handler<'info>(
             ctx.accounts.sale_authority.to_account_info(), // leaf_delegate (read-only)
             ctx.accounts.buyer.to_account_info(), // new_leaf_owner (read-only)
             ctx.accounts.merkle_tree.to_account_info(),
-            // core_collection = None → Bubblegum program ID placeholder
-            ctx.accounts.bubblegum_program.to_account_info(),
+            ctx.accounts.core_collection.to_account_info(),
             ctx.accounts.log_wrapper.to_account_info(),
             ctx.accounts.compression_program.to_account_info(),
             ctx.accounts.system_program.to_account_info(),

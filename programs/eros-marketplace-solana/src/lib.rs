@@ -31,6 +31,7 @@ pub(crate) use instructions::execute_purchase::__client_accounts_execute_purchas
 pub(crate) use instructions::housekeeping_clear::__client_accounts_housekeeping_clear;
 pub(crate) use instructions::init_registries::__client_accounts_init_registries;
 pub(crate) use instructions::initialize::__client_accounts_initialize;
+pub(crate) use instructions::register_collection::__client_accounts_register_collection;
 pub(crate) use instructions::set_listing_quote::__client_accounts_set_listing_quote;
 
 declare_id!("Ca8tTnDxUcXd1FKDaCc1x8m8faEU6NB3jfLhDNvrZK8a");
@@ -41,6 +42,10 @@ pub mod eros_marketplace_solana {
 
     pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
         instructions::initialize::handler(ctx)
+    }
+
+    pub fn register_collection(ctx: Context<RegisterCollection>, collection: Pubkey) -> Result<()> {
+        instructions::register_collection::handler(ctx, collection)
     }
 
     #[allow(clippy::too_many_arguments)]
