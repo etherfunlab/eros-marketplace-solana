@@ -946,6 +946,51 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn register_collection_succeeds() {
+        use crate::helpers::*;
+        use solana_sdk::signer::Signer;
+        let mut ctx = fresh_ctx().await;
+        let payer = ctx.payer.insecure_clone();
+        bootstrap_config(&mut ctx, &payer).await;
+
+        let collection = solana_sdk::pubkey::Pubkey::new_unique();
+        let ix = register_collection_ix(&payer.pubkey(), &payer.pubkey(), collection);
+        send_tx(&mut ctx, &payer, &[ix]).await.expect("register_collection");
+
+        // Verify the CollectionRegistry account exists at the expected PDA.
+        let (registry_pda, _bump) = collection_registry_pda(&collection);
+        let acct = ctx
+            .banks_client
+            .get_account(registry_pda)
+            .await
+            .unwrap()
+            .expect("CollectionRegistry account missing");
+        assert_eq!(acct.owner, eros_marketplace_solana::ID);
+    }
+
+    #[tokio::test]
+    async fn register_collection_rejects_wrong_admin() {
+        use crate::helpers::*;
+        use solana_sdk::signer::Signer;
+        let mut ctx = fresh_ctx().await;
+        let admin = ctx.payer.insecure_clone();
+        bootstrap_config(&mut ctx, &admin).await;
+
+        let imposter = solana_sdk::signature::Keypair::new();
+        fund(&mut ctx, &imposter.pubkey(), 1_000_000_000).await;
+
+        let collection = solana_sdk::pubkey::Pubkey::new_unique();
+        let ix = register_collection_ix(&imposter.pubkey(), &imposter.pubkey(), collection);
+        let err = send_tx(&mut ctx, &imposter, &[ix]).await.expect_err("must fail");
+        // NotAdmin is SaleError index 12 → Anchor error code 6012 (0x177c).
+        let dbg = format!("{err:?}");
+        assert!(
+            dbg.contains("6012") || dbg.contains("NotAdmin"),
+            "expected NotAdmin (6012), got: {err:?}"
+        );
+    }
+
     /// Cross-instruction signature-bypass attack: the Ed25519 instruction is
     /// well-formed and the seller-signed pubkey + message both live inside it,
     /// so the precompile validates successfully. But `message_instruction_index`
