@@ -52,6 +52,33 @@ jobs:
       # toolchain version in object files; a stale cache can produce silent
       # mismatches. Rebuild is fast enough on ubuntu-latest with registry cache.
 
+      - name: Restore program keypair (must derive declare_id!())
+        # `anchor build` errors out if the keypair file at
+        # target/deploy/<program>-keypair.json doesn't derive the same pubkey
+        # as declare_id!(Ca8tTnDxUcXd1FKDaCc1x8m8faEU6NB3jfLhDNvrZK8a). Since
+        # target/ is gitignored, the keypair ships via a repository secret
+        # named PROGRAM_KEYPAIR_JSON whose value is the literal byte-array
+        # JSON content of the canonical keypair file (e.g.
+        # "[1,2,3,...,64]"). Set it in Settings → Secrets and variables →
+        # Actions → New repository secret.
+        env:
+          PROGRAM_KEYPAIR_JSON: ${{ secrets.PROGRAM_KEYPAIR_JSON }}
+        run: |
+          if [ -z "$PROGRAM_KEYPAIR_JSON" ]; then
+            echo "::error::Secret PROGRAM_KEYPAIR_JSON is unset. Without it anchor build will generate a fresh keypair that does not match declare_id!()."
+            echo "::error::Set repository secret PROGRAM_KEYPAIR_JSON to the byte-array JSON contents of target/deploy/eros_marketplace_solana-keypair.json."
+            exit 1
+          fi
+          mkdir -p target/deploy
+          printf '%s' "$PROGRAM_KEYPAIR_JSON" > target/deploy/eros_marketplace_solana-keypair.json
+          chmod 600 target/deploy/eros_marketplace_solana-keypair.json
+          DERIVED=$(solana-keygen pubkey target/deploy/eros_marketplace_solana-keypair.json)
+          echo "Keypair derives: $DERIVED"
+          if [ "$DERIVED" != "Ca8tTnDxUcXd1FKDaCc1x8m8faEU6NB3jfLhDNvrZK8a" ]; then
+            echo "::error::Restored keypair does not derive the expected program ID. Check the PROGRAM_KEYPAIR_JSON secret."
+            exit 1
+          fi
+
       - name: anchor build (production .so → target/deploy/)
         run: anchor build
 
