@@ -1,0 +1,71 @@
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "last_indexed_slot": 419256599,
+    "interface": "MplBubblegumV2",
+    "id": "GJzydX5kUzEzpMegXqqqiitTWDDAwCEMwiC62RKWSFfL",
+    "content": {
+      "$schema": "https://schema.metaplex.com/nft1.0.json",
+      "json_uri": "https://example.invalid/probe01-asset.json",
+      "files": [],
+      "metadata": {
+        "name": "Probe01 Asset",
+        "symbol": "",
+        "token_standard": "NonFungible"
+      },
+      "links": {}
+    },
+    "authorities": [
+      {
+        "address": "2vsRtW6rai91PryguoBeLyJJUzJVGeDTh4FJycLUwh7c",
+        "scopes": [
+          "full"
+        ]
+      }
+    ],
+    "compression": {
+      "eligible": false,
+      "compressed": true,
+      "data_hash": "CBphBKNC3R7vtHguQXTodXYpmSQ9WdYStEVf1GuZsoi3",
+      "creator_hash": "EKDHSGbrGztomDfuiV4iqiZ6LschDJPsFiXjZ83f92Md",
+      "collection_hash": "JBKqeJ4qeXaugtU6sjikzVnVuPbCWzpGx94BPL6fh7XE",
+      "asset_data_hash": "EKDHSGbrGztomDfuiV4iqiZ6LschDJPsFiXjZ83f92Md",
+      "flags": 0,
+      "asset_hash": "d6BWQPJpNCmSqbbGd1FEYERfV8kmtjUxhbCPQDoE6F9",
+      "tree": "DQ5TwhieMvbtsxJFaffy7JQ51eCQTrwvHiqN2HZ4bsRj",
+      "seq": 2,
+      "leaf_id": 0
+    },
+    "grouping": [
+      {
+        "group_key": "collection",
+        "group_value": "EUrTBkgNtcq8GgUPBan6xKgVahsVR3U1w6VpFVNtLRse"
+      }
+    ],
+    "royalty": {
+      "royalty_model": "creators",
+      "target": null,
+      "percent": 0,
+      "basis_points": 0,
+      "primary_sale_happened": false,
+      "locked": false
+    },
+    "creators": [],
+    "ownership": {
+      "frozen": false,
+      "non_transferable": false,
+      "delegated": false,
+      "delegate": null,
+      "ownership_model": "single",
+      "owner": "HsyKX6cyePhnWgiKfFvL2LHgxL4aAtq9LN95bACZN55Z"
+    },
+    "supply": {
+      "print_max_supply": 0,
+      "print_current_supply": 0,
+      "edition_nonce": null
+    },
+    "mutable": true,
+    "burnt": false
+  },
+  "id": "probe-01"
+}

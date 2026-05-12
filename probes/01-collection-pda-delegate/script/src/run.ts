@@ -13,6 +13,7 @@ import {
   generateSigner,
   keypairIdentity,
   none,
+  publicKey,
   some,
   Umi,
 } from '@metaplex-foundation/umi';
@@ -32,12 +33,16 @@ import {
 } from '@metaplex-foundation/mpl-bubblegum';
 import { dasApi } from '@metaplex-foundation/digital-asset-standard-api';
 
-const DEVNET_RPC = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com';
+// Cluster auto-detected from SOLANA_RPC_URL — if it contains "mainnet", we
+// also point DAS at mainnet-helius. Otherwise default to devnet.
+const RPC_URL = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com';
 const HELIUS_KEY = process.env.HELIUS_API_KEY;
+const IS_MAINNET = RPC_URL.includes('mainnet');
 const HELIUS_RPC = HELIUS_KEY
-  ? `https://devnet.helius-rpc.com/?api-key=${HELIUS_KEY}`
+  ? `https://${IS_MAINNET ? 'mainnet' : 'devnet'}.helius-rpc.com/?api-key=${HELIUS_KEY}`
   : null;
-const DAS_RPC = HELIUS_RPC ?? DEVNET_RPC;
+const DAS_RPC = HELIUS_RPC ?? RPC_URL;
+const CLUSTER_LABEL = IS_MAINNET ? 'MAINNET' : 'devnet';
 
 const RESPONSES_DIR = path.resolve(__dirname, '..', '..', 'helius-responses');
 
@@ -93,8 +98,8 @@ async function main(): Promise<void> {
   await fs.mkdir(RESPONSES_DIR, { recursive: true });
 
   // ── PHASE A ─────────────────────────────────────────────────────────────
-  console.log('\n== PHASE A: umi setup ==');
-  const umi = createUmi(DEVNET_RPC)
+  console.log(`\n== PHASE A: umi setup (${CLUSTER_LABEL}) ==`);
+  const umi = createUmi(RPC_URL)
     .use(mplBubblegum())
     .use(mplCore())
     .use(dasApi());
@@ -104,9 +109,10 @@ async function main(): Promise<void> {
   const balance = await umi.rpc.getBalance(payerKp.publicKey);
   console.log(`payer: ${payerKp.publicKey}`);
   console.log(`balance: ${Number(balance.basisPoints) / 1e9} SOL`);
-  if (Number(balance.basisPoints) < 1_500_000_000) {
+  const minBalance = IS_MAINNET ? 500_000_000 : 1_500_000_000;
+  if (Number(balance.basisPoints) < minBalance) {
     throw new Error(
-      `payer balance too low (need >=1.5 SOL on devnet). got ${Number(balance.basisPoints) / 1e9}`,
+      `payer balance too low (need >=${minBalance / 1e9} SOL on ${CLUSTER_LABEL}). got ${Number(balance.basisPoints) / 1e9}`,
     );
   }
 
@@ -120,9 +126,13 @@ async function main(): Promise<void> {
   const collectionSigner = generateSigner(umi);
   const collectionTx = await createCollection(umi, {
     collection: collectionSigner,
-    name: 'Probe01 Collection',
+    name: `Probe01 ${CLUSTER_LABEL} Collection (eros-marketplace v0.2 validation)`,
     uri: 'https://example.invalid/probe01.json',
     plugins: [
+      // Marker plugin — Bubblegum V2 mintV2 refuses to mint into Core
+      // collections that lack this. Discovered via mainnet probe 2026-05-12
+      // (error 6049 CollectionMustHaveBubblegumPlugin).
+      { type: 'BubblegumV2' },
       {
         type: 'PermanentTransferDelegate',
         authority: { type: 'Address', address: delegateKp.publicKey },
@@ -139,18 +149,29 @@ async function main(): Promise<void> {
   await dumpJson('B-collection-account', collectionAcct);
   console.log(`  plugins present: ${(collectionAcct as any).permanentTransferDelegate ? 'PermanentTransferDelegate ✓' : '(none seen)'}`);
 
-  // ── PHASE C: create Bubblegum V2 tree ────────────────────────────────────
-  console.log('\n== PHASE C: createTreeV2 ==');
-  const merkleTree = generateSigner(umi);
-  const createTreeBuilder = await createTreeV2(umi, {
-    merkleTree,
-    maxDepth: 5,
-    maxBufferSize: 8,
-    public: false,
-  });
-  const treeTx = await createTreeBuilder.sendAndConfirm(umi);
-  console.log(`tree: ${merkleTree.publicKey}`);
-  console.log(`tx: ${Buffer.from(treeTx.signature).toString('base64')}`);
+  // ── PHASE C: create Bubblegum V2 tree (or reuse existing) ───────────────
+  // EXISTING_TREE_PUBKEY env override lets a retry reuse a tree from a prior
+  // attempt (V2 tree creation costs ~0.3 SOL — avoid re-burning on iteration).
+  let merkleTreePubkey: any;
+  let treeTxSig: Uint8Array | null = null;
+  if (process.env.EXISTING_TREE_PUBKEY) {
+    merkleTreePubkey = publicKey(process.env.EXISTING_TREE_PUBKEY);
+    console.log(`\n== PHASE C: reusing existing tree ${merkleTreePubkey} ==`);
+  } else {
+    console.log('\n== PHASE C: createTreeV2 ==');
+    const merkleTree = generateSigner(umi);
+    const createTreeBuilder = await createTreeV2(umi, {
+      merkleTree,
+      maxDepth: 5,
+      maxBufferSize: 8,
+      public: false,
+    });
+    const treeTx = await createTreeBuilder.sendAndConfirm(umi);
+    merkleTreePubkey = merkleTree.publicKey;
+    treeTxSig = treeTx.signature;
+    console.log(`tree: ${merkleTree.publicKey}`);
+    console.log(`tx: ${Buffer.from(treeTx.signature).toString('base64')}`);
+  }
 
   // ── PHASE D: mint a cNFT into the collection ────────────────────────────
   console.log('\n== PHASE D: mintV2 into collection ==');
@@ -162,7 +183,7 @@ async function main(): Promise<void> {
     () =>
       mintV2(umi, {
         leafOwner: leafOwnerKp.publicKey,
-        merkleTree: merkleTree.publicKey,
+        merkleTree: merkleTreePubkey,
         coreCollection: collectionSigner.publicKey,
         metadata: {
           name: 'Probe01 Asset',
@@ -205,7 +226,7 @@ async function main(): Promise<void> {
       transferV2(umi, {
         leafOwner: leafOwnerKp.publicKey,
         newLeafOwner: newOwnerKp.publicKey,
-        merkleTree: merkleTree.publicKey,
+        merkleTree: merkleTreePubkey,
         coreCollection: collectionSigner.publicKey,
         authority: delegateKp, // ← the test: permanent delegate (NOT leaf owner) signs
         root: assetWithProof.root,
@@ -246,9 +267,9 @@ async function main(): Promise<void> {
   console.log('');
   console.log(`Tx signatures (base58 via solscan):`);
   const explorer = (sig: Uint8Array) =>
-    `https://solscan.io/tx/${require('bs58').default.encode(sig)}?cluster=devnet`;
+    `https://solscan.io/tx/${require('bs58').default.encode(sig)}${IS_MAINNET ? '' : '?cluster=devnet'}`;
   console.log(`  collection: ${explorer(collectionTx.signature)}`);
-  console.log(`  tree:       ${explorer(treeTx.signature)}`);
+  console.log(`  tree:       ${treeTxSig ? explorer(treeTxSig) : `${merkleTreePubkey} (reused)`}`);
   console.log(`  mint:       ${explorer(mintTx.signature)}`);
   console.log(`  transfer:   ${explorer(transferTx.signature)}`);
   console.log('');
