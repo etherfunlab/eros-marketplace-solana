@@ -1,0 +1,22 @@
+{
+  "name": "probe-01-collection-pda-delegate",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "run": "ts-node src/run.ts"
+  },
+  "dependencies": {
+    "@metaplex-foundation/digital-asset-standard-api": "^2.0.0",
+    "@metaplex-foundation/mpl-bubblegum": "^5.0.2",
+    "@metaplex-foundation/mpl-core": "^1.10.0",
+    "@metaplex-foundation/umi": "^1.5.1",
+    "@metaplex-foundation/umi-bundle-defaults": "^1.5.1",
+    "@solana/web3.js": "^1.95.0",
+    "bs58": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  }
+}
