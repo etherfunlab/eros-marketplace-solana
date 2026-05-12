@@ -680,6 +680,115 @@ mod tests {
     #[allow(dead_code)]
     fn _uses_real_seller_sk(_: SigningKey) {}
 
+    /// Verifies the Purchase event fires on a successful execute_purchase.
+    /// Anchor's `emit!` lowers to a `sol_log_data` call which renders as a
+    /// `Program data: <base64>` log line; the svc indexer plan parses these.
+    #[tokio::test]
+    async fn execute_purchase_emits_purchase_event() {
+        let mut ctx = fresh_ctx().await;
+        let payer = ctx.payer.insecure_clone();
+        bootstrap_config(&mut ctx, &payer).await;
+
+        let seller_sk = SigningKey::generate(&mut rand::rngs::OsRng);
+        let seller_pk_bytes: [u8; 32] = seller_sk.verifying_key().to_bytes();
+        let seller_pubkey = Pubkey::new_from_array(seller_pk_bytes);
+        let buyer = Keypair::new();
+        let royalty_recipient = Keypair::new();
+        let platform_fee_recipient = Keypair::new();
+
+        for wallet_pk in [
+            &buyer.pubkey(),
+            &seller_pubkey,
+            &royalty_recipient.pubkey(),
+            &platform_fee_recipient.pubkey(),
+        ] {
+            let t = anchor_lang::solana_program::system_instruction::transfer(
+                &payer.pubkey(),
+                wallet_pk,
+                10_000_000_000,
+            );
+            send_tx(&mut ctx, &payer, &[t]).await.unwrap();
+            ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+        }
+
+        let asset_id = Pubkey::new_unique();
+        send_tx(
+            &mut ctx,
+            &payer,
+            &[init_registries_ix(
+                &payer.pubkey(),
+                &payer.pubkey(),
+                asset_id,
+                royalty_recipient.pubkey(),
+                250,
+                platform_fee_recipient.pubkey(),
+                500,
+                "ar://abc".to_string(),
+                [0u8; 32],
+                "ern:1.0:01HXY0000000000000000000Y2".to_string(),
+                "1.0".to_string(),
+            )],
+        )
+        .await
+        .unwrap();
+        ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+
+        send_tx(
+            &mut ctx,
+            &payer,
+            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller_pubkey, 1)],
+        )
+        .await
+        .unwrap();
+        ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+
+        let now_seconds = ctx
+            .banks_client
+            .get_sysvar::<solana_sdk::clock::Clock>()
+            .await
+            .unwrap()
+            .unix_timestamp;
+        let sale_order = SaleOrder {
+            asset_id,
+            seller_wallet: seller_pubkey,
+            price_lamports: 1_000_000_000,
+            listing_nonce: 1,
+            expires_at: now_seconds + 600,
+        };
+        let canonical = sale_order.canonical_bytes();
+        let sig_bytes: [u8; 64] = seller_sk.sign(&canonical).to_bytes();
+
+        let ed_ix = ed25519_precompile_ix(&seller_pk_bytes, &sig_bytes, &canonical);
+        let exec_ix = execute_purchase_ix(
+            &buyer.pubkey(),
+            &seller_pubkey,
+            &royalty_recipient.pubkey(),
+            &platform_fee_recipient.pubkey(),
+            sale_order,
+            0,
+            BubblegumPlaceholders::default(),
+        );
+
+        let recent = ctx.last_blockhash;
+        let tx = Transaction::new_signed_with_payer(
+            &[ed_ix, exec_ix],
+            Some(&buyer.pubkey()),
+            &[&buyer],
+            recent,
+        );
+        let outcome = ctx
+            .banks_client
+            .process_transaction_with_metadata(tx)
+            .await
+            .expect("rpc ok");
+        outcome.result.expect("execute_purchase succeeds");
+        let logs = outcome.metadata.expect("metadata").log_messages;
+        assert!(
+            logs.iter().any(|l| l.starts_with("Program data:")),
+            "expected a `Program data:` log line carrying the Purchase event; got: {logs:?}"
+        );
+    }
+
     /// Admin gate: bootstrap captures payer-as-admin, but init_registries is
     /// signed by a different keypair claiming to be admin. Must fail with
     /// NotAdmin (has_one constraint on ProgramConfig.admin).

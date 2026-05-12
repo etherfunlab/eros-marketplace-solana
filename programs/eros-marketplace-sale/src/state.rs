@@ -43,6 +43,24 @@ pub struct ProgramConfig {
     pub bump: u8,
 }
 
+/// Emitted on a successful `execute_purchase`. Consumed by the
+/// `eros-marketplace-svc` indexer to populate `marketplace_orders`.
+/// Fields chosen so the indexer can reconcile against on-chain data
+/// without re-parsing the SaleOrder bytes.
+#[event]
+pub struct Purchase {
+    pub asset_id: Pubkey,
+    pub buyer: Pubkey,
+    pub seller: Pubkey,
+    pub royalty_recipient: Pubkey,
+    pub platform_fee_recipient: Pubkey,
+    pub price_lamports: u64,
+    pub royalty_lamports: u64,
+    pub platform_fee_lamports: u64,
+    pub seller_proceeds_lamports: u64,
+    pub listing_nonce: u64,
+}
+
 /// Mutable per-(asset, seller) listing state. Tracks the active signed quote
 /// nonce and a monotonic high-water mark to prevent nonce reuse.
 #[account]

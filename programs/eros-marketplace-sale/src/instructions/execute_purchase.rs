@@ -5,7 +5,7 @@ use crate::ed25519::verify_ed25519_precompile;
 use crate::error::SaleError;
 use crate::sale_order::SaleOrder;
 use crate::seeds::{LISTING_STATE_SEED, ROYALTY_REGISTRY_SEED, SALE_AUTHORITY_SEED};
-use crate::state::{ListingState, RoyaltyRegistry};
+use crate::state::{ListingState, Purchase, RoyaltyRegistry};
 
 // ── mpl-bubblegum 3.0 CPI surface — TransferV2 ───────────────────────────────
 //
@@ -355,6 +355,23 @@ pub fn handler<'info>(
 
     // 8. Clear the active listing nonce — prevents replay.
     ctx.accounts.listing_state.active_nonce = None;
+
+    // 9. Emit Purchase event for the off-chain indexer.
+    //    The svc plan parses this from `Program data:` logs to populate
+    //    `marketplace_orders`. Emitting after the SOL transfers + nonce clear
+    //    means a Purchase event corresponds to a fully-settled sale.
+    emit!(Purchase {
+        asset_id: sale_order.asset_id,
+        buyer: ctx.accounts.buyer.key(),
+        seller: ctx.accounts.seller.key(),
+        royalty_recipient: ctx.accounts.royalty_recipient.key(),
+        platform_fee_recipient: ctx.accounts.platform_fee_recipient.key(),
+        price_lamports: price,
+        royalty_lamports: royalty,
+        platform_fee_lamports: fee,
+        seller_proceeds_lamports: proceeds,
+        listing_nonce: sale_order.listing_nonce,
+    });
 
     Ok(())
 }
