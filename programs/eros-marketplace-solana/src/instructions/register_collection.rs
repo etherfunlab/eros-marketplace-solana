@@ -38,10 +38,8 @@ pub struct RegisterCollection<'info> {
 }
 
 pub fn handler(ctx: Context<RegisterCollection>, collection: Pubkey) -> Result<()> {
-    let (_sale_authority, sale_authority_bump) = Pubkey::find_program_address(
-        &[SALE_AUTHORITY_SEED, collection.as_ref()],
-        ctx.program_id,
-    );
+    let (_sale_authority, sale_authority_bump) =
+        Pubkey::find_program_address(&[SALE_AUTHORITY_SEED, collection.as_ref()], ctx.program_id);
 
     let r = &mut ctx.accounts.collection_registry;
     r.collection = collection;

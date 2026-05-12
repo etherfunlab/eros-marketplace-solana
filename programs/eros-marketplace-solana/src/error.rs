@@ -44,7 +44,9 @@ pub enum SaleError {
     #[msg("registry already initialized")]
     RegistryAlreadyInitialized,
 
-    #[msg("CollectionRegistry not initialized for this collection — call register_collection first")]
+    #[msg(
+        "CollectionRegistry not initialized for this collection — call register_collection first"
+    )]
     CollectionNotRegistered,
 
     #[msg("SaleOrder.collection does not match the provided collection account")]

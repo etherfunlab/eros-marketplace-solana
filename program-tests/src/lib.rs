@@ -420,6 +420,11 @@ mod tests {
             ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
         }
 
+        // Register the collection (v0.2: required for execute_purchase).
+        let collection = Pubkey::new_unique();
+        bootstrap_collection(&mut ctx, &payer, collection).await;
+        ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+
         // Init registries: 250 bps royalty, 500 bps platform fee.
         let asset_id = Pubkey::new_unique();
         let init_ix = init_registries_ix(
@@ -463,6 +468,7 @@ mod tests {
             .unix_timestamp;
         let sale_order = SaleOrder {
             asset_id,
+            collection,
             seller_wallet: seller_pubkey,
             price_lamports: 1_000_000_000,
             listing_nonce: 1,
@@ -523,7 +529,7 @@ mod tests {
     }
 
     // Helper: set up the common state needed for execute_purchase rejection tests.
-    // Returns (ctx, payer, seller_sk, seller_pubkey, buyer, r_recv, f_recv, asset_id, now_ts)
+    // Returns (ctx, payer, seller_sk, seller_pubkey, buyer, r_recv, f_recv, asset_id, collection, now_ts)
     async fn setup_for_execute_purchase() -> (
         solana_program_test::ProgramTestContext,
         solana_sdk::signature::Keypair, // payer (cloned)
@@ -533,6 +539,7 @@ mod tests {
         Keypair, // royalty_recipient
         Keypair, // platform_fee_recipient
         Pubkey,  // asset_id
+        Pubkey,  // collection
         i64,     // unix_timestamp at setup
     ) {
         let mut ctx = fresh_ctx().await;
@@ -559,6 +566,10 @@ mod tests {
             send_tx(&mut ctx, &payer, &[t]).await.unwrap();
             ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
         }
+
+        let collection = Pubkey::new_unique();
+        bootstrap_collection(&mut ctx, &payer, collection).await;
+        ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
 
         let asset_id = Pubkey::new_unique();
         send_tx(
@@ -613,17 +624,29 @@ mod tests {
             r_recv,
             f_recv,
             asset_id,
+            collection,
             now_ts,
         )
     }
 
     #[tokio::test]
     async fn execute_purchase_rejects_expired_order() {
-        let (mut ctx, _payer, seller_sk, seller_pubkey, buyer, r_recv, f_recv, asset_id, _now) =
-            setup_for_execute_purchase().await;
+        let (
+            mut ctx,
+            _payer,
+            seller_sk,
+            seller_pubkey,
+            buyer,
+            r_recv,
+            f_recv,
+            asset_id,
+            collection,
+            _now,
+        ) = setup_for_execute_purchase().await;
 
         let order = SaleOrder {
             asset_id,
+            collection,
             seller_wallet: seller_pubkey,
             price_lamports: 1_000_000_000,
             listing_nonce: 1,
@@ -654,11 +677,22 @@ mod tests {
     #[tokio::test]
     async fn execute_purchase_rejects_nonce_mismatch() {
         // active_nonce = 1, SaleOrder.listing_nonce = 999 → ListingNonceMismatch
-        let (mut ctx, _payer, seller_sk, seller_pubkey, buyer, r_recv, f_recv, asset_id, now_ts) =
-            setup_for_execute_purchase().await;
+        let (
+            mut ctx,
+            _payer,
+            seller_sk,
+            seller_pubkey,
+            buyer,
+            r_recv,
+            f_recv,
+            asset_id,
+            collection,
+            now_ts,
+        ) = setup_for_execute_purchase().await;
 
         let order = SaleOrder {
             asset_id,
+            collection,
             seller_wallet: seller_pubkey,
             price_lamports: 1_000_000_000,
             listing_nonce: 999, // mismatches the active nonce of 1
@@ -699,6 +733,7 @@ mod tests {
             r_recv,
             f_recv,
             asset_id,
+            collection,
             now_ts,
         ) = setup_for_execute_purchase().await;
 
@@ -707,6 +742,7 @@ mod tests {
 
         let order = SaleOrder {
             asset_id,
+            collection,
             seller_wallet: real_seller_pubkey, // claims to be real seller
             price_lamports: 1_000_000_000,
             listing_nonce: 1,
@@ -774,6 +810,10 @@ mod tests {
             ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
         }
 
+        let collection = Pubkey::new_unique();
+        bootstrap_collection(&mut ctx, &payer, collection).await;
+        ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+
         let asset_id = Pubkey::new_unique();
         send_tx(
             &mut ctx,
@@ -819,6 +859,7 @@ mod tests {
             .unix_timestamp;
         let sale_order = SaleOrder {
             asset_id,
+            collection,
             seller_wallet: seller_pubkey,
             price_lamports: 1_000_000_000,
             listing_nonce: 1,
@@ -956,7 +997,9 @@ mod tests {
 
         let collection = solana_sdk::pubkey::Pubkey::new_unique();
         let ix = register_collection_ix(&payer.pubkey(), &payer.pubkey(), collection);
-        send_tx(&mut ctx, &payer, &[ix]).await.expect("register_collection");
+        send_tx(&mut ctx, &payer, &[ix])
+            .await
+            .expect("register_collection");
 
         // Verify the CollectionRegistry account exists at the expected PDA.
         let (registry_pda, _bump) = collection_registry_pda(&collection);
@@ -982,7 +1025,9 @@ mod tests {
 
         let collection = solana_sdk::pubkey::Pubkey::new_unique();
         let ix = register_collection_ix(&imposter.pubkey(), &imposter.pubkey(), collection);
-        let err = send_tx(&mut ctx, &imposter, &[ix]).await.expect_err("must fail");
+        let err = send_tx(&mut ctx, &imposter, &[ix])
+            .await
+            .expect_err("must fail");
         // NotAdmin is SaleError index 12 → Anchor error code 6012 (0x177c).
         let dbg = format!("{err:?}");
         assert!(
@@ -999,11 +1044,22 @@ mod tests {
     /// attacker put there. The hardened parser must reject the descriptor.
     #[tokio::test]
     async fn execute_purchase_rejects_cross_instruction_msg_index() {
-        let (mut ctx, _payer, seller_sk, seller_pubkey, buyer, r_recv, f_recv, asset_id, now_ts) =
-            setup_for_execute_purchase().await;
+        let (
+            mut ctx,
+            _payer,
+            seller_sk,
+            seller_pubkey,
+            buyer,
+            r_recv,
+            f_recv,
+            asset_id,
+            collection,
+            now_ts,
+        ) = setup_for_execute_purchase().await;
 
         let order = SaleOrder {
             asset_id,
+            collection,
             seller_wallet: seller_pubkey,
             price_lamports: 1_000_000_000,
             listing_nonce: 1,
@@ -1039,6 +1095,156 @@ mod tests {
         assert!(
             result.is_err(),
             "cross-instruction msg index must fail (Ed25519DescriptorMismatch)"
+        );
+    }
+
+    /// Negative: execute_purchase must fail when the collection in SaleOrder has
+    /// never been registered via `register_collection`. Anchor will surface this
+    /// as AccountNotInitialized (3012) when it tries to load the CollectionRegistry.
+    #[tokio::test]
+    async fn execute_purchase_rejects_unregistered_collection() {
+        let (
+            mut ctx,
+            _payer,
+            seller_sk,
+            seller_pubkey,
+            buyer,
+            r_recv,
+            f_recv,
+            asset_id,
+            _registered_collection, // from setup (but we won't use it)
+            now_ts,
+        ) = setup_for_execute_purchase().await;
+
+        // Use a brand-new collection pubkey that was never registered.
+        let unregistered_collection = Pubkey::new_unique();
+
+        let order = SaleOrder {
+            asset_id,
+            collection: unregistered_collection,
+            seller_wallet: seller_pubkey,
+            price_lamports: 1_000_000_000,
+            listing_nonce: 1,
+            expires_at: now_ts + 600,
+        };
+        let canon = order.canonical_bytes();
+        let sig_bytes: [u8; 64] = seller_sk.sign(&canon).to_bytes();
+        let pk_bytes: [u8; 32] = seller_sk.verifying_key().to_bytes();
+
+        let ed = ed25519_precompile_ix(&pk_bytes, &sig_bytes, &canon);
+        let ex = execute_purchase_ix(
+            &buyer.pubkey(),
+            &seller_pubkey,
+            &r_recv.pubkey(),
+            &f_recv.pubkey(),
+            order,
+            0,
+            BubblegumPlaceholders::default(),
+        );
+
+        let recent = ctx.last_blockhash;
+        let tx =
+            Transaction::new_signed_with_payer(&[ed, ex], Some(&buyer.pubkey()), &[&buyer], recent);
+        let result = ctx.banks_client.process_transaction(tx).await;
+        // Anchor returns AccountNotInitialized (3012) when a seeds-constrained
+        // account has no data at the expected PDA address.
+        assert!(
+            result.is_err(),
+            "unregistered collection must fail (AccountNotInitialized / 3012)"
+        );
+        let dbg = format!("{result:?}");
+        assert!(
+            dbg.contains("3012") || dbg.contains("AccountNotInitialized"),
+            "expected AccountNotInitialized (3012), got: {dbg}"
+        );
+    }
+
+    /// Negative: execute_purchase must fail when the `core_collection` account
+    /// passed in the instruction does NOT match `SaleOrder.collection`. Anchor's
+    /// `address = sale_order.collection` constraint on `core_collection` will
+    /// reject with ConstraintAddress (2003).
+    #[tokio::test]
+    async fn execute_purchase_rejects_collection_account_mismatch() {
+        let (
+            mut ctx,
+            payer,
+            seller_sk,
+            seller_pubkey,
+            buyer,
+            r_recv,
+            f_recv,
+            asset_id,
+            collection_a,
+            now_ts,
+        ) = setup_for_execute_purchase().await;
+
+        // Register a second collection B.
+        let collection_b = Pubkey::new_unique();
+        bootstrap_collection(&mut ctx, &payer, collection_b).await;
+        ctx.last_blockhash = ctx.banks_client.get_latest_blockhash().await.unwrap();
+
+        // SaleOrder claims collection = A, but we will swap core_collection to B
+        // by constructing the ix with a SaleOrder whose collection field = B, then
+        // patching the SaleOrder we sign over.
+        //
+        // The simplest approach: build an ix with collection_b in SaleOrder but
+        // sign over a canonical that uses collection_a. Because the address
+        // constraint on core_collection derives from sale_order.collection in the
+        // instruction data, passing collection_b as SaleOrder.collection will
+        // succeed the core_collection constraint BUT the listing_state PDA is
+        // derived from (asset_id, seller_wallet) independent of collection, so
+        // the nonce check still runs — the account loaded will match.
+        //
+        // Easiest way to trigger the mismatch: pass SaleOrder.collection = A to
+        // execute_purchase_ix (which sets core_collection account = A), then
+        // override the account at the core_collection slot with B's pubkey.
+        // We do this by manually patching the AccountMeta list on the instruction.
+        let order_with_a = SaleOrder {
+            asset_id,
+            collection: collection_a,
+            seller_wallet: seller_pubkey,
+            price_lamports: 1_000_000_000,
+            listing_nonce: 1,
+            expires_at: now_ts + 600,
+        };
+        let canon = order_with_a.canonical_bytes();
+        let sig_bytes: [u8; 64] = seller_sk.sign(&canon).to_bytes();
+        let pk_bytes: [u8; 32] = seller_sk.verifying_key().to_bytes();
+
+        let ed = ed25519_precompile_ix(&pk_bytes, &sig_bytes, &canon);
+        let mut ex = execute_purchase_ix(
+            &buyer.pubkey(),
+            &seller_pubkey,
+            &r_recv.pubkey(),
+            &f_recv.pubkey(),
+            order_with_a,
+            0,
+            BubblegumPlaceholders::default(),
+        );
+
+        // Patch: find the core_collection account slot (the pubkey that equals
+        // collection_a) and replace it with collection_b. Anchor will then see
+        // that the account key != sale_order.collection and return ConstraintAddress.
+        for meta in ex.accounts.iter_mut() {
+            if meta.pubkey == collection_a {
+                meta.pubkey = collection_b;
+                break;
+            }
+        }
+
+        let recent = ctx.last_blockhash;
+        let tx =
+            Transaction::new_signed_with_payer(&[ed, ex], Some(&buyer.pubkey()), &[&buyer], recent);
+        let result = ctx.banks_client.process_transaction(tx).await;
+        // Anchor ConstraintAddress = 2003; CollectionMismatch = SaleError index 15 = 6015.
+        assert!(
+            result.is_err(),
+            "mismatched core_collection account must fail (ConstraintAddress / 2003 or CollectionMismatch / 6015)"
+        );
+        let dbg = format!("{result:?}");
+        assert!(
+            dbg.contains("2003") || dbg.contains("ConstraintAddress") || dbg.contains("6015"),
+            "expected ConstraintAddress (2003) or CollectionMismatch (6015), got: {dbg}"
         );
     }
 }

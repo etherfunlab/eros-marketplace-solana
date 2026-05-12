@@ -57,9 +57,9 @@ mod tests {
     fn canonical_bytes_field_order_is_stable() {
         let s = fixture();
         let bytes = s.canonical_bytes();
-        assert_eq!(&bytes[..32], &[1u8; 32]);     // asset_id
-        assert_eq!(&bytes[32..64], &[9u8; 32]);   // collection
-        assert_eq!(&bytes[64..96], &[2u8; 32]);   // seller_wallet
+        assert_eq!(&bytes[..32], &[1u8; 32]); // asset_id
+        assert_eq!(&bytes[32..64], &[9u8; 32]); // collection
+        assert_eq!(&bytes[64..96], &[2u8; 32]); // seller_wallet
         assert_eq!(&bytes[96..104], &1_000_000_000u64.to_le_bytes());
         assert_eq!(&bytes[104..112], &42u64.to_le_bytes());
         assert_eq!(&bytes[112..120], &1_700_000_000i64.to_le_bytes());

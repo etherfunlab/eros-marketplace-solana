@@ -44,10 +44,7 @@ pub mod eros_marketplace_solana {
         instructions::initialize::handler(ctx)
     }
 
-    pub fn register_collection(
-        ctx: Context<RegisterCollection>,
-        collection: Pubkey,
-    ) -> Result<()> {
+    pub fn register_collection(ctx: Context<RegisterCollection>, collection: Pubkey) -> Result<()> {
         instructions::register_collection::handler(ctx, collection)
     }
 
