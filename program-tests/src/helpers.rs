@@ -254,6 +254,43 @@ pub fn ed25519_precompile_ix(
     }
 }
 
+/// Variant of `ed25519_precompile_ix` that lets the caller poison one or more
+/// of the three descriptor `*_instruction_index` fields (sig / pk / msg). Used
+/// by negative tests for the cross-instruction signature-bypass attack.
+pub fn ed25519_precompile_ix_with_indices(
+    pubkey: &[u8; 32],
+    signature: &[u8; 64],
+    message: &[u8],
+    sig_ix_index: u16,
+    pk_ix_index: u16,
+    msg_ix_index: u16,
+) -> Instruction {
+    let sig_off: u16 = 16;
+    let pk_off: u16 = sig_off + 64;   // 80
+    let msg_off: u16 = pk_off + 32;   // 112
+    let msg_size: u16 = message.len() as u16;
+
+    let mut data = Vec::with_capacity(16 + 64 + 32 + message.len());
+    data.push(1u8);
+    data.push(0u8);
+    data.extend_from_slice(&sig_off.to_le_bytes());
+    data.extend_from_slice(&sig_ix_index.to_le_bytes());
+    data.extend_from_slice(&pk_off.to_le_bytes());
+    data.extend_from_slice(&pk_ix_index.to_le_bytes());
+    data.extend_from_slice(&msg_off.to_le_bytes());
+    data.extend_from_slice(&msg_size.to_le_bytes());
+    data.extend_from_slice(&msg_ix_index.to_le_bytes());
+    data.extend_from_slice(signature);
+    data.extend_from_slice(pubkey);
+    data.extend_from_slice(message);
+
+    Instruction {
+        program_id: solana_sdk_ids::ed25519_program::ID,
+        accounts: vec![],
+        data,
+    }
+}
+
 // ── Phase 6: Bubblegum placeholder accounts for unit tests ──────────────────
 //
 // When the `test-without-bubblegum` feature is active (as it is for all unit

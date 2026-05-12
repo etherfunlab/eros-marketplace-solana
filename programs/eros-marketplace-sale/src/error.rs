@@ -26,6 +26,9 @@ pub enum SaleError {
     #[msg("Ed25519Program signing pubkey does not match SaleOrder.seller_wallet")]
     Ed25519PubkeyMismatch,
 
+    #[msg("Ed25519Program descriptor uses non-canonical offsets or cross-instruction indices")]
+    Ed25519DescriptorMismatch,
+
     #[msg("cNFT current owner does not match SaleOrder.seller_wallet")]
     OwnerMismatch,
 

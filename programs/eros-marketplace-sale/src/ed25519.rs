@@ -55,13 +55,38 @@ pub fn verify_ed25519_precompile(
     require!(data.len() >= 16, SaleError::Ed25519PrecompileMissing);
     require_eq!(data[0], 1u8, SaleError::Ed25519PrecompileMissing); // exactly 1 sig
 
-    // Parse the offsets (little-endian u16)
+    // Parse the 3 descriptors (little-endian u16). Field positions follow the
+    // Solana Ed25519Program layout — see this module's docstring.
+    let sig_off = u16::from_le_bytes([data[2], data[3]]) as usize;
+    let sig_ix_idx = u16::from_le_bytes([data[4], data[5]]);
     let pk_off = u16::from_le_bytes([data[6], data[7]]) as usize;
+    let pk_ix_idx = u16::from_le_bytes([data[8], data[9]]);
     let msg_off = u16::from_le_bytes([data[10], data[11]]) as usize;
     let msg_size = u16::from_le_bytes([data[12], data[13]]) as usize;
+    let msg_ix_idx = u16::from_le_bytes([data[14], data[15]]);
 
+    // All three descriptor instruction indices MUST be u16::MAX ("this same
+    // instruction"). A non-MAX index lets the precompile validate bytes from
+    // a different instruction in the same tx while our parser reads bytes
+    // local to this Ed25519 instruction — a complete signature bypass.
     require!(
-        pk_off + 32 <= data.len() && msg_off + msg_size <= data.len(),
+        sig_ix_idx == u16::MAX && pk_ix_idx == u16::MAX && msg_ix_idx == u16::MAX,
+        SaleError::Ed25519DescriptorMismatch
+    );
+
+    // Enforce the canonical offset layout produced by callers that this
+    // program trusts: sig at 16, pubkey at 80, message at 112. Any other
+    // layout signals a hand-rolled instruction we don't accept.
+    require!(
+        sig_off == 16 && pk_off == 80 && msg_off == 112,
+        SaleError::Ed25519DescriptorMismatch
+    );
+
+    // In-bounds checks for all three slices (sig was previously unchecked).
+    require!(
+        sig_off + 64 <= data.len()
+            && pk_off + 32 <= data.len()
+            && msg_off + msg_size <= data.len(),
         SaleError::Ed25519PrecompileMissing
     );
 

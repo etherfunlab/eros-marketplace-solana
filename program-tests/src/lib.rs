@@ -666,4 +666,59 @@ mod tests {
     // Also verify the real_seller_sk variable is used (suppress unused warning)
     #[allow(dead_code)]
     fn _uses_real_seller_sk(_: SigningKey) {}
+
+    /// Cross-instruction signature-bypass attack: the Ed25519 instruction is
+    /// well-formed and the seller-signed pubkey + message both live inside it,
+    /// so the precompile validates successfully. But `message_instruction_index`
+    /// is set to 0 instead of u16::MAX. A naive parser (the v0.1.0 one) reads
+    /// the message bytes locally to this instruction and accepts whatever the
+    /// attacker put there. The hardened parser must reject the descriptor.
+    #[tokio::test]
+    async fn execute_purchase_rejects_cross_instruction_msg_index() {
+        let (mut ctx, _payer, seller_sk, seller_pubkey, buyer, r_recv, f_recv, asset_id, now_ts) =
+            setup_for_execute_purchase().await;
+
+        let order = SaleOrder {
+            asset_id,
+            seller_wallet: seller_pubkey,
+            price_lamports: 1_000_000_000,
+            listing_nonce: 1,
+            expires_at: now_ts + 600,
+        };
+        let canon = order.canonical_bytes();
+        let sig_bytes: [u8; 64] = seller_sk.sign(&canon).to_bytes();
+        let pk_bytes: [u8; 32] = seller_sk.verifying_key().to_bytes();
+
+        // msg_ix_index = 0 (not u16::MAX) → must trip Ed25519DescriptorMismatch.
+        let ed = ed25519_precompile_ix_with_indices(
+            &pk_bytes,
+            &sig_bytes,
+            &canon,
+            u16::MAX, // sig
+            u16::MAX, // pk
+            0,        // msg — POISONED
+        );
+        let ex = execute_purchase_ix(
+            &buyer.pubkey(),
+            &seller_pubkey,
+            &r_recv.pubkey(),
+            &f_recv.pubkey(),
+            order,
+            0,
+            BubblegumPlaceholders::default(),
+        );
+
+        let recent = ctx.last_blockhash;
+        let tx = Transaction::new_signed_with_payer(
+            &[ed, ex],
+            Some(&buyer.pubkey()),
+            &[&buyer],
+            recent,
+        );
+        let result = ctx.banks_client.process_transaction(tx).await;
+        assert!(
+            result.is_err(),
+            "cross-instruction msg index must fail (Ed25519DescriptorMismatch)"
+        );
+    }
 }
