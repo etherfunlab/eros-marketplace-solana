@@ -284,7 +284,12 @@ pub fn handler<'info>(
     //               must be created with sale_authority as its permanent transfer
     //               delegate)
     //   leaf_owner    = seller (read-only)
-    //   leaf_delegate = sale_authority PDA (informational, read-only)
+    //   leaf_delegate = seller (read-only — V2 leaves are minted with
+    //               delegate = leaf_owner by default; passing anything else
+    //               makes Bubblegum recompute the leaf hash and reject the
+    //               Merkle proof. The collection's `PermanentTransferDelegate`
+    //               authority does NOT need to match the leaf's `delegate`
+    //               field — that's a separate authorization axis.)
     //   new_leaf_owner = buyer
     #[cfg(not(feature = "test-without-bubblegum"))]
     {
@@ -310,8 +315,12 @@ pub fn handler<'info>(
             // delegate. The `None` fallback (→ payer) is wrong for marketplace use.
             authority: Some(ctx.accounts.sale_authority.key()),
             leaf_owner: ctx.accounts.seller.key(),
-            // leaf_delegate is informational (read-only in V2).
-            leaf_delegate: Some(ctx.accounts.sale_authority.key()),
+            // leaf_delegate MUST match the leaf's actual delegate field for the
+            // V2 leaf-hash recomputation to succeed. mintV2 defaults the leaf
+            // delegate to `leaf_owner` (= seller), so we pass seller here. Our
+            // collection-permanent-delegate authority (sale_authority) signs
+            // the CPI via the `authority` field above, independently of this.
+            leaf_delegate: Some(ctx.accounts.seller.key()),
             new_leaf_owner: ctx.accounts.buyer.key(),
             merkle_tree: ctx.accounts.merkle_tree.key(),
             core_collection: Some(ctx.accounts.core_collection.key()),
@@ -344,7 +353,7 @@ pub fn handler<'info>(
             ctx.accounts.buyer.to_account_info(), // payer (writable, signer)
             ctx.accounts.sale_authority.to_account_info(), // authority (signer via PDA)
             ctx.accounts.seller.to_account_info(), // leaf_owner (read-only)
-            ctx.accounts.sale_authority.to_account_info(), // leaf_delegate (read-only)
+            ctx.accounts.seller.to_account_info(), // leaf_delegate = leaf_owner (V2 default)
             ctx.accounts.buyer.to_account_info(), // new_leaf_owner (read-only)
             ctx.accounts.merkle_tree.to_account_info(),
             ctx.accounts.core_collection.to_account_info(),
