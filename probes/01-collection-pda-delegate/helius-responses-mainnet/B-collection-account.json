@@ -1,0 +1,38 @@
+{
+  "publicKey": "EUrTBkgNtcq8GgUPBan6xKgVahsVR3U1w6VpFVNtLRse",
+  "header": {
+    "executable": false,
+    "owner": "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d",
+    "lamports": {
+      "basisPoints": "2630880",
+      "identifier": "SOL",
+      "decimals": 9
+    },
+    "rentEpoch": "18446744073709551616",
+    "exists": true
+  },
+  "pluginHeader": {
+    "key": 3,
+    "pluginRegistryOffset": "157"
+  },
+  "bubblegumV2": {
+    "authority": {
+      "type": "Address",
+      "address": "BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY"
+    },
+    "offset": "155"
+  },
+  "permanentTransferDelegate": {
+    "authority": {
+      "type": "Address",
+      "address": "4owmxJqhZ55eUuUSA8dawYD52C36ny3wEKbAwDKLAtTP"
+    },
+    "offset": "156"
+  },
+  "key": 5,
+  "updateAuthority": "6uMkJcBN3en83aN2qJ9LKsoUtZkxhB8MGAfLPnDQjDrM",
+  "name": "Probe01 MAINNET Collection (eros-marketplace v0.2 validation)",
+  "uri": "https://example.invalid/probe01.json",
+  "numMinted": 0,
+  "currentSize": 0
+}
