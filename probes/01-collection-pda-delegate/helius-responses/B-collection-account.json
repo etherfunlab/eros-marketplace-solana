@@ -1,0 +1,31 @@
+{
+  "publicKey": "EMK8HwdFCDpDDKSTjXg1UB2cHxSvgHB6ijsFmzAQ6UZ9",
+  "header": {
+    "executable": false,
+    "owner": "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d",
+    "lamports": {
+      "basisPoints": "2032320",
+      "identifier": "SOL",
+      "decimals": 9
+    },
+    "rentEpoch": "18446744073709551616",
+    "exists": true
+  },
+  "pluginHeader": {
+    "key": 3,
+    "pluginRegistryOffset": "113"
+  },
+  "permanentTransferDelegate": {
+    "authority": {
+      "type": "Address",
+      "address": "CRwvtQPWNr42a7H8qXQsZ4chN6ZTeq9o6bJ4EKA6vrXu"
+    },
+    "offset": "112"
+  },
+  "key": 5,
+  "updateAuthority": "6uMkJcBN3en83aN2qJ9LKsoUtZkxhB8MGAfLPnDQjDrM",
+  "name": "Probe01 Collection",
+  "uri": "https://example.invalid/probe01.json",
+  "numMinted": 0,
+  "currentSize": 0
+}
