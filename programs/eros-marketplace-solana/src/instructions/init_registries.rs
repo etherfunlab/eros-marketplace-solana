@@ -50,6 +50,7 @@ pub struct InitRegistries<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handler(
     ctx: Context<InitRegistries>,
     asset_id: Pubkey,

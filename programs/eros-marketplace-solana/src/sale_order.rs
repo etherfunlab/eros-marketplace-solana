@@ -11,7 +11,7 @@ pub struct SaleOrder {
     pub seller_wallet: Pubkey,
     pub price_lamports: u64,
     pub listing_nonce: u64,
-    pub expires_at: i64,        // unix timestamp seconds
+    pub expires_at: i64, // unix timestamp seconds
 }
 
 impl SaleOrder {

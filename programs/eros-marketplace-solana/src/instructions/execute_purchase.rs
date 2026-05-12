@@ -47,9 +47,9 @@ use crate::state::{ListingState, Purchase, RoyaltyRegistry};
 
 // Imports needed only when the Bubblegum CPI is compiled in.
 #[cfg(not(feature = "test-without-bubblegum"))]
-use mpl_bubblegum::instructions::{TransferV2 as BubblegumTransferV2, TransferV2InstructionArgs};
-#[cfg(not(feature = "test-without-bubblegum"))]
 use anchor_lang::solana_program::{instruction::AccountMeta, program::invoke_signed};
+#[cfg(not(feature = "test-without-bubblegum"))]
+use mpl_bubblegum::instructions::{TransferV2 as BubblegumTransferV2, TransferV2InstructionArgs};
 
 #[derive(Accounts)]
 #[instruction(sale_order: SaleOrder, ed25519_ix_index: u8)]
@@ -61,15 +61,15 @@ pub struct ExecutePurchase<'info> {
     /// CHECK: validated via SaleOrder.seller_wallet address constraint.
     /// Phase 6 will also verify via Bubblegum merkle proof cNFT owner check.
     #[account(mut, address = sale_order.seller_wallet)]
-    pub seller: AccountInfo<'info>,
+    pub seller: UncheckedAccount<'info>,
 
     /// CHECK: validated against royalty_registry.royalty_recipient in handler.
     #[account(mut)]
-    pub royalty_recipient: AccountInfo<'info>,
+    pub royalty_recipient: UncheckedAccount<'info>,
 
     /// CHECK: validated against royalty_registry.platform_fee_recipient in handler.
     #[account(mut)]
-    pub platform_fee_recipient: AccountInfo<'info>,
+    pub platform_fee_recipient: UncheckedAccount<'info>,
 
     /// Immutable royalty + platform fee parameters for this asset.
     #[account(
@@ -95,7 +95,7 @@ pub struct ExecutePurchase<'info> {
     /// Sysvar for Ed25519Program instruction introspection.
     /// CHECK: address is constrained to the well-known instructions sysvar ID.
     #[account(address = INSTRUCTIONS_SYSVAR_ID)]
-    pub instructions_sysvar: AccountInfo<'info>,
+    pub instructions_sysvar: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
 
@@ -104,7 +104,6 @@ pub struct ExecutePurchase<'info> {
     // The program PDA `sale_authority` acts as the leaf delegate that the seller
     // delegated to off-chain via a Bubblegum `delegate` ix. The PDA is unique per
     // (asset_id, seller_wallet) so different listings never share authority.
-
     /// Program PDA acting as Bubblegum leaf delegate.
     /// Seeds: [SALE_AUTHORITY_SEED, asset_id, seller_wallet]
     /// CHECK: This is a program-owned PDA. Its derivation is validated by Anchor's
@@ -117,32 +116,36 @@ pub struct ExecutePurchase<'info> {
         ],
         bump,
     )]
-    pub sale_authority: AccountInfo<'info>,
+    pub sale_authority: UncheckedAccount<'info>,
 
     /// CHECK: Bubblegum tree config PDA for the merkle tree.
     ///        Validated by the Bubblegum program during CPI.
     #[account(mut)]
-    pub tree_config: AccountInfo<'info>,
+    pub tree_config: UncheckedAccount<'info>,
 
     /// CHECK: Concurrent merkle tree account for the cNFT.
     ///        Validated by the Bubblegum program during CPI.
     #[account(mut)]
-    pub merkle_tree: AccountInfo<'info>,
+    pub merkle_tree: UncheckedAccount<'info>,
 
     /// CHECK: SPL Noop program (log_wrapper).
     ///        Bubblegum emits events via this program.
-    pub log_wrapper: AccountInfo<'info>,
+    pub log_wrapper: UncheckedAccount<'info>,
 
     /// CHECK: SPL Account Compression program.
     ///        Bubblegum delegates leaf mutation to this program.
-    pub compression_program: AccountInfo<'info>,
+    pub compression_program: UncheckedAccount<'info>,
 
     /// CHECK: mpl-bubblegum program.
     ///        Address is pinned to the canonical Bubblegum program ID.
     #[account(address = mpl_bubblegum::ID)]
-    pub bubblegum_program: AccountInfo<'info>,
+    pub bubblegum_program: UncheckedAccount<'info>,
 }
 
+// When `test-without-bubblegum` gates out the Bubblegum CPI block, the proof
+// params (root / *_hash / nonce / index) are unused locally — they're only
+// consumed inside the cfg-gated block. Silence the lint in that mode.
+#[cfg_attr(feature = "test-without-bubblegum", allow(unused_variables))]
 #[allow(clippy::too_many_arguments)]
 pub fn handler<'info>(
     ctx: Context<'info, ExecutePurchase<'info>>,
@@ -333,11 +336,11 @@ pub fn handler<'info>(
         let mut account_infos = vec![
             ctx.accounts.bubblegum_program.to_account_info(), // program itself
             ctx.accounts.tree_config.to_account_info(),
-            ctx.accounts.buyer.to_account_info(),      // payer (writable, signer)
+            ctx.accounts.buyer.to_account_info(), // payer (writable, signer)
             ctx.accounts.sale_authority.to_account_info(), // authority (signer via PDA)
-            ctx.accounts.seller.to_account_info(),     // leaf_owner (read-only)
+            ctx.accounts.seller.to_account_info(), // leaf_owner (read-only)
             ctx.accounts.sale_authority.to_account_info(), // leaf_delegate (read-only)
-            ctx.accounts.buyer.to_account_info(),      // new_leaf_owner (read-only)
+            ctx.accounts.buyer.to_account_info(), // new_leaf_owner (read-only)
             ctx.accounts.merkle_tree.to_account_info(),
             // core_collection = None → Bubblegum program ID placeholder
             ctx.accounts.bubblegum_program.to_account_info(),

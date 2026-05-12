@@ -56,7 +56,11 @@ pub fn handler(
         // Identity must be stable for this PDA (the seeds enforce this, but
         // belt-and-braces).
         require_keys_eq!(s.asset_id, asset_id, SaleError::RegistryAssetMismatch);
-        require_keys_eq!(s.seller_wallet, seller_wallet, SaleError::RegistryAssetMismatch);
+        require_keys_eq!(
+            s.seller_wallet,
+            seller_wallet,
+            SaleError::RegistryAssetMismatch
+        );
     }
 
     require!(

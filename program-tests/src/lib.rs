@@ -17,15 +17,15 @@ mod tests {
     use solana_sdk::transaction::Transaction;
 
     fn sample_init_args() -> (
-        Pubkey, // asset_id
-        Pubkey, // royalty_recipient
-        u16,    // royalty_bps
-        Pubkey, // platform_fee_recipient
-        u16,    // platform_fee_bps
-        String, // manifest_uri
+        Pubkey,   // asset_id
+        Pubkey,   // royalty_recipient
+        u16,      // royalty_bps
+        Pubkey,   // platform_fee_recipient
+        u16,      // platform_fee_bps
+        String,   // manifest_uri
         [u8; 32], // manifest_sha256
-        String, // persona_id
-        String, // spec_version
+        String,   // persona_id
+        String,   // spec_version
     ) {
         let asset_id = Pubkey::new_unique();
         let royalty_recipient = Pubkey::new_unique();
@@ -135,7 +135,9 @@ mod tests {
         let seller = Pubkey::new_unique();
 
         let ix = set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller, 1);
-        send_tx(&mut ctx, &payer, &[ix]).await.expect("first listing ok");
+        send_tx(&mut ctx, &payer, &[ix])
+            .await
+            .expect("first listing ok");
 
         let (pda, _) = listing_state_pda(&asset_id, &seller);
         let s = read_listing(&mut ctx, pda).await;
@@ -156,7 +158,13 @@ mod tests {
         send_tx(
             &mut ctx,
             &payer,
-            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller, 1)],
+            &[set_listing_quote_ix(
+                &payer.pubkey(),
+                &payer.pubkey(),
+                asset_id,
+                seller,
+                1,
+            )],
         )
         .await
         .unwrap();
@@ -165,7 +173,13 @@ mod tests {
         send_tx(
             &mut ctx,
             &payer,
-            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller, 5)],
+            &[set_listing_quote_ix(
+                &payer.pubkey(),
+                &payer.pubkey(),
+                asset_id,
+                seller,
+                5,
+            )],
         )
         .await
         .unwrap();
@@ -187,7 +201,13 @@ mod tests {
         send_tx(
             &mut ctx,
             &payer,
-            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller, 5)],
+            &[set_listing_quote_ix(
+                &payer.pubkey(),
+                &payer.pubkey(),
+                asset_id,
+                seller,
+                5,
+            )],
         )
         .await
         .unwrap();
@@ -198,7 +218,13 @@ mod tests {
         let result = send_tx(
             &mut ctx,
             &payer,
-            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller, 5)],
+            &[set_listing_quote_ix(
+                &payer.pubkey(),
+                &payer.pubkey(),
+                asset_id,
+                seller,
+                5,
+            )],
         )
         .await;
         assert!(result.is_err(), "equal nonce must fail");
@@ -209,7 +235,13 @@ mod tests {
         let result = send_tx(
             &mut ctx,
             &payer,
-            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller, 3)],
+            &[set_listing_quote_ix(
+                &payer.pubkey(),
+                &payer.pubkey(),
+                asset_id,
+                seller,
+                3,
+            )],
         )
         .await;
         assert!(result.is_err(), "lower nonce must fail");
@@ -274,7 +306,13 @@ mod tests {
         send_tx(
             &mut ctx,
             &payer,
-            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller.pubkey(), 7)],
+            &[set_listing_quote_ix(
+                &payer.pubkey(),
+                &payer.pubkey(),
+                asset_id,
+                seller.pubkey(),
+                7,
+            )],
         )
         .await
         .unwrap();
@@ -323,7 +361,13 @@ mod tests {
         send_tx(
             &mut ctx,
             &payer,
-            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller.pubkey(), 1)],
+            &[set_listing_quote_ix(
+                &payer.pubkey(),
+                &payer.pubkey(),
+                asset_id,
+                seller.pubkey(),
+                1,
+            )],
         )
         .await
         .unwrap();
@@ -398,7 +442,13 @@ mod tests {
         send_tx(
             &mut ctx,
             &payer,
-            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller_pubkey, 1)],
+            &[set_listing_quote_ix(
+                &payer.pubkey(),
+                &payer.pubkey(),
+                asset_id,
+                seller_pubkey,
+                1,
+            )],
         )
         .await
         .unwrap();
@@ -535,7 +585,13 @@ mod tests {
         send_tx(
             &mut ctx,
             &payer,
-            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller_pubkey, 1)],
+            &[set_listing_quote_ix(
+                &payer.pubkey(),
+                &payer.pubkey(),
+                asset_id,
+                seller_pubkey,
+                1,
+            )],
         )
         .await
         .unwrap();
@@ -548,7 +604,17 @@ mod tests {
             .unwrap()
             .unix_timestamp;
 
-        (ctx, payer, seller_sk, seller_pubkey, buyer, r_recv, f_recv, asset_id, now_ts)
+        (
+            ctx,
+            payer,
+            seller_sk,
+            seller_pubkey,
+            buyer,
+            r_recv,
+            f_recv,
+            asset_id,
+            now_ts,
+        )
     }
 
     #[tokio::test]
@@ -579,12 +645,8 @@ mod tests {
         );
 
         let recent = ctx.last_blockhash;
-        let tx = Transaction::new_signed_with_payer(
-            &[ed, ex],
-            Some(&buyer.pubkey()),
-            &[&buyer],
-            recent,
-        );
+        let tx =
+            Transaction::new_signed_with_payer(&[ed, ex], Some(&buyer.pubkey()), &[&buyer], recent);
         let result = ctx.banks_client.process_transaction(tx).await;
         assert!(result.is_err(), "expired order must fail");
     }
@@ -618,12 +680,8 @@ mod tests {
         );
 
         let recent = ctx.last_blockhash;
-        let tx = Transaction::new_signed_with_payer(
-            &[ed, ex],
-            Some(&buyer.pubkey()),
-            &[&buyer],
-            recent,
-        );
+        let tx =
+            Transaction::new_signed_with_payer(&[ed, ex], Some(&buyer.pubkey()), &[&buyer], recent);
         let result = ctx.banks_client.process_transaction(tx).await;
         assert!(result.is_err(), "nonce mismatch must fail");
     }
@@ -632,8 +690,17 @@ mod tests {
     async fn execute_purchase_rejects_wrong_signing_key() {
         // Ed25519 instruction is signed by imposter, but SaleOrder.seller_wallet
         // is the real seller → Ed25519PubkeyMismatch.
-        let (mut ctx, _payer, real_seller_sk, real_seller_pubkey, buyer, r_recv, f_recv, asset_id, now_ts) =
-            setup_for_execute_purchase().await;
+        let (
+            mut ctx,
+            _payer,
+            real_seller_sk,
+            real_seller_pubkey,
+            buyer,
+            r_recv,
+            f_recv,
+            asset_id,
+            now_ts,
+        ) = setup_for_execute_purchase().await;
 
         let imposter_sk = SigningKey::generate(&mut rand::rngs::OsRng);
         let imposter_pk_bytes: [u8; 32] = imposter_sk.verifying_key().to_bytes();
@@ -663,12 +730,8 @@ mod tests {
         );
 
         let recent = ctx.last_blockhash;
-        let tx = Transaction::new_signed_with_payer(
-            &[ed, ex],
-            Some(&buyer.pubkey()),
-            &[&buyer],
-            recent,
-        );
+        let tx =
+            Transaction::new_signed_with_payer(&[ed, ex], Some(&buyer.pubkey()), &[&buyer], recent);
         let result = ctx.banks_client.process_transaction(tx).await;
         assert!(
             result.is_err(),
@@ -736,7 +799,13 @@ mod tests {
         send_tx(
             &mut ctx,
             &payer,
-            &[set_listing_quote_ix(&payer.pubkey(), &payer.pubkey(), asset_id, seller_pubkey, 1)],
+            &[set_listing_quote_ix(
+                &payer.pubkey(),
+                &payer.pubkey(),
+                asset_id,
+                seller_pubkey,
+                1,
+            )],
         )
         .await
         .unwrap();
@@ -862,13 +931,7 @@ mod tests {
 
         let asset_id = Pubkey::new_unique();
         let seller = Pubkey::new_unique();
-        let ix = set_listing_quote_ix(
-            &imposter.pubkey(),
-            &imposter.pubkey(),
-            asset_id,
-            seller,
-            1,
-        );
+        let ix = set_listing_quote_ix(&imposter.pubkey(), &imposter.pubkey(), asset_id, seller, 1);
         let recent = ctx.last_blockhash;
         let tx = Transaction::new_signed_with_payer(
             &[ix],
@@ -925,12 +988,8 @@ mod tests {
         );
 
         let recent = ctx.last_blockhash;
-        let tx = Transaction::new_signed_with_payer(
-            &[ed, ex],
-            Some(&buyer.pubkey()),
-            &[&buyer],
-            recent,
-        );
+        let tx =
+            Transaction::new_signed_with_payer(&[ed, ex], Some(&buyer.pubkey()), &[&buyer], recent);
         let result = ctx.banks_client.process_transaction(tx).await;
         assert!(
             result.is_err(),

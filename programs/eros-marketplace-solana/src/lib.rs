@@ -3,6 +3,11 @@
 //! See README.md and the spec at
 //! eros-docs/docs/superpowers/specs/2026-05-09-eros-chat-marketplace-design.md.
 
+// Anchor 1.0's #[program] macro expansion trips
+// `clippy::diverging_sub_expression` on the generated dispatch arms; this is a
+// macro-side false positive we have no control over.
+#![allow(clippy::diverging_sub_expression)]
+
 use anchor_lang::prelude::*;
 
 pub mod ed25519;
@@ -11,7 +16,6 @@ pub mod instructions;
 pub mod sale_order;
 pub mod seeds;
 pub mod state;
-
 
 pub use sale_order::SaleOrder;
 
@@ -39,6 +43,7 @@ pub mod eros_marketplace_solana {
         instructions::initialize::handler(ctx)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn init_registries(
         ctx: Context<InitRegistries>,
         asset_id: Pubkey,
@@ -86,6 +91,7 @@ pub mod eros_marketplace_solana {
         instructions::housekeeping_clear::handler(ctx, asset_id, seller_wallet)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn execute_purchase<'info>(
         ctx: Context<'info, ExecutePurchase<'info>>,
         sale_order: SaleOrder,

@@ -7,8 +7,11 @@ publish = false
 [dependencies]
 eros-marketplace-solana = { path = "../programs/eros-marketplace-solana", features = ["no-entrypoint", "test-without-bubblegum"] }
 anchor-lang = "1.0"
-# solana-program-test 3.x matches the installed Agave 3.1.15 runtime
-solana-program-test = "3"
+# solana-program-test 3.x matches the installed Agave 3.1.15 runtime.
+# `agave-unstable-api` acknowledges the unstable-API marker that Agave 3.x
+# added; without it every use of ProgramTest / ProgramTestContext trips a
+# deprecation warning that fails CI under -D warnings.
+solana-program-test = { version = "3", features = ["agave-unstable-api"] }
 solana-sdk = "3"
 tokio = { version = "1", features = ["rt", "macros"] }
 borsh = "1"
@@ -21,3 +24,15 @@ mpl-bubblegum = { version = "3.0.0", default-features = false }
 
 [lib]
 path = "src/lib.rs"
+
+# Test infra: drop strictness on lints that fire on inert test scaffolding
+# (dead helpers ready for tests not yet written, destructured-but-unused
+# locals from setup_for_execute_purchase, etc.). The program crate itself
+# stays strict via its own [lints.rust] block.
+[lints.rust]
+dead_code = "allow"
+unused_variables = "allow"
+unused_mut = "allow"
+
+[lints.clippy]
+cloned_ref_to_slice_refs = "allow"

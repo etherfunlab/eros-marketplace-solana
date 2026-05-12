@@ -84,9 +84,7 @@ pub fn verify_ed25519_precompile(
 
     // In-bounds checks for all three slices (sig was previously unchecked).
     require!(
-        sig_off + 64 <= data.len()
-            && pk_off + 32 <= data.len()
-            && msg_off + msg_size <= data.len(),
+        sig_off + 64 <= data.len() && pk_off + 32 <= data.len() && msg_off + msg_size <= data.len(),
         SaleError::Ed25519PrecompileMissing
     );
 

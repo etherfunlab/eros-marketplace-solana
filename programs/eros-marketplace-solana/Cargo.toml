@@ -41,4 +41,11 @@ solana-signer = "3.0.0"
 solana-keypair = "3.0.1"
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
+# Anchor 1.0.x's #[program] / #[derive(Accounts)] macros emit
+# `cfg(feature = "custom-heap" | "custom-panic" | "anchor-debug")` against
+# features that the program crate does not declare. Declare them as expected
+# so the macro expansion passes -D warnings (set by CI).
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(target_os, values("solana"))',
+    'cfg(feature, values("custom-heap", "custom-panic", "anchor-debug"))',
+] }

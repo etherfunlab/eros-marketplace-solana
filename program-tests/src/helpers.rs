@@ -6,10 +6,7 @@ use eros_marketplace_solana::seeds::{
 };
 use solana_program_test::{ProgramTest, ProgramTestContext};
 use solana_sdk::{
-    instruction::Instruction,
-    pubkey::Pubkey,
-    signature::Keypair,
-    signer::Signer,
+    instruction::Instruction, pubkey::Pubkey, signature::Keypair, signer::Signer,
     transaction::Transaction,
 };
 
@@ -267,16 +264,16 @@ pub fn ed25519_precompile_ix(
 ) -> Instruction {
     // offsets into the data blob (everything lives in the same instruction)
     let sig_off: u16 = 16;
-    let pk_off: u16 = sig_off + 64;   // 80
-    let msg_off: u16 = pk_off + 32;   // 112
+    let pk_off: u16 = sig_off + 64; // 80
+    let msg_off: u16 = pk_off + 32; // 112
     let msg_size: u16 = message.len() as u16;
     let same_ix: u16 = u16::MAX;
 
     let mut data = Vec::with_capacity(16 + 64 + 32 + message.len());
     // header
-    data.push(1u8);  // count
-    data.push(0u8);  // padding
-    // signature descriptor
+    data.push(1u8); // count
+    data.push(0u8); // padding
+                    // signature descriptor
     data.extend_from_slice(&sig_off.to_le_bytes());
     data.extend_from_slice(&same_ix.to_le_bytes());
     // pubkey descriptor
@@ -310,8 +307,8 @@ pub fn ed25519_precompile_ix_with_indices(
     msg_ix_index: u16,
 ) -> Instruction {
     let sig_off: u16 = 16;
-    let pk_off: u16 = sig_off + 64;   // 80
-    let msg_off: u16 = pk_off + 32;   // 112
+    let pk_off: u16 = sig_off + 64; // 80
+    let msg_off: u16 = pk_off + 32; // 112
     let msg_size: u16 = message.len() as u16;
 
     let mut data = Vec::with_capacity(16 + 64 + 32 + message.len());
@@ -467,10 +464,11 @@ pub fn execute_purchase_ix(
 
     // Append proof nodes as additional read-only non-signer accounts.
     for proof_node in &bb.proof {
-        ix.accounts.push(solana_sdk::instruction::AccountMeta::new_readonly(
-            *proof_node,
-            false,
-        ));
+        ix.accounts
+            .push(solana_sdk::instruction::AccountMeta::new_readonly(
+                *proof_node,
+                false,
+            ));
     }
 
     ix
